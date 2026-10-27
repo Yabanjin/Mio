@@ -1,0 +1,6 @@
+# Words removed from transcriptions before sending to the LLM; one entry per line.
+stop
+mio
+hey mio
+be quiet
+silence

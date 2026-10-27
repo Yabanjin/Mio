@@ -1,0 +1,5 @@
+{
+  "device": "cuda:0",
+  "gpu_uuid": "0",
+  "cpu_threads": 2
+}

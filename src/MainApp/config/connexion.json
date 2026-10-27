@@ -1,0 +1,10 @@
+{
+  "llm_url": "http://127.0.0.1:1234/v1/chat/completions",
+  "llm_models_url": "http://127.0.0.1:1234/api/v0/models",
+  "camera_snapshot_url": "http://127.0.0.1:8090/liveimage.jpg?oid=1&size=640x480",
+  "face_recognition_url": "http://127.0.0.1:32168/v1/vision/face/recognize",
+  "face_min_confidence": 0.6,
+  "rvc_config_url": "http://127.0.0.1:18000/api/configuration-manager/configuration",
+  "rvc_convert_url": "http://127.0.0.1:18000/api/voice-changer/convert_chunk",
+  "output_device": null
+}

@@ -1,0 +1,71 @@
+MIO — DESKTOP INTERFACE
+=======================
+
+Open interface/Launch Mio.vbs. The chat window opens first. Opening the interface does not
+start audio services, models, the microphone or the camera.
+
+1. Customize
+   Select a section, edit its fields and save. Prompts and replies are plain text;
+   numeric values and switches have dedicated controls. Text lists use one item
+   per line. Advanced JSON editing supports additional fields and list entries.
+   Leaving a modified section offers to save its changes.
+
+   Prompts: common identity, Normal, Child, Adult and reply rewriting.
+   Automatic replies: wake, stop, sleep, greetings and errors.
+   Voice commands: phrases recognized by Vosk.
+   Recognition: names, aliases, mode conditions and SpeechBrain profiles.
+   Memory: identity, known facts and extraction instructions.
+   LLM model and GPU: exact model key downloaded in LM Studio and GPU settings.
+   Connections: camera, face recognition, LLM, VoiceChanger and audio output.
+   Installation: shared Python, model resources and external applications.
+
+2. Start
+   Save your settings, then select Start. Mio starts missing external services,
+   loads the LLM when enabled, starts Whisper, Piper, Melo and vector memory, then
+   MainApp. MainApp starts Vosk, Silero, WebRTC and speaker recognition.
+   External services already available are reused. Configure the camera in
+   Agent DVR and configure audio routing in Windows.
+
+3. Apply changes and close
+   Customize stays available when the chat is ready. Reload to apply changes
+   saves the current section, stops this session and starts its services again.
+   The selected LLM is reloaded when load_llm is enabled.
+   Status appears in the header, mode below it, and compact buttons alongside.
+   Close the window with X to stop the session. There is no separate Stop button.
+   Windows Job Objects contain launched processes and their descendants, which
+   are stopped when the session ends or the controller closes unexpectedly.
+   External services that were already running are not stopped by Mio.
+   Logs opens engine output and provides access to service log files.
+
+Languages
+---------
+English is the project language and the default for the interface, prompts,
+automatic replies and voice commands. Normal mode supports English, French and
+Japanese. Adult mode supports English and French. Child mode uses English by
+default. Change child_language and mode_allowed together in Response languages
+when choosing a different child language. Other model and voice languages must
+also be supported by the installed services.
+
+Vosk command recognition uses a language-specific model. The English command set
+uses vosk-model-small-en-us-0.15. Its local model files are separate from source
+code. Model path is available in the Vosk configuration; the Installation resource
+MIO_VOSK_MODEL takes precedence for this interface.
+Official model download and license: https://alphacephei.com/vosk/models
+
+Local installation
+------------------
+Code and settings are stored with this interface. settings/interface.json can
+reference an existing shared Python environment and model directories. Change
+paths using Browse. External applications keep their own installation settings.
+Runtime databases, state and logs are stored under data in this directory.
+
+Current limitations
+-------------------
+This is a development application, not an EXE installer. Internal Python service
+ports are fixed, so stop another Mio session before starting this one. Audio
+drivers, virtual cameras, models and external programs must be installed. Some
+external applications may need to be started manually with Windows permissions.
+There are three fixed conversation modes; their prompts and selection criteria
+are customizable. Creating additional mode types is not implemented.
+Chat appearance changes apply after reopening the window. The complete voice
+workflow still needs validation with the real services.

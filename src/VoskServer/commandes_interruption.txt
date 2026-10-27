@@ -1,0 +1,17 @@
+# Voice commands. Section IDs are retained for protocol compatibility.
+
+[REVEIL]
+hey mio
+are you there mio
+wake up mio
+
+[STOP]
+stop
+be quiet
+
+[PAUSE]
+go to sleep
+sleep mio
+
+[FLIRT]
+mio stop flirting

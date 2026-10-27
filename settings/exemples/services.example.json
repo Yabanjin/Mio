@@ -1,0 +1,15 @@
+{
+  "llm": {
+    "base_url": "http://127.0.0.1:<port>/v1",
+    "model_id": "<choose a model>"
+  },
+  "stt": {
+    "endpoint": "<configure endpoint>"
+  },
+  "tts": {
+    "endpoint": "<configure endpoint>"
+  },
+  "camera": {
+    "endpoint": "<configure endpoint>"
+  }
+}

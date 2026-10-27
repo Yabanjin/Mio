@@ -1,0 +1,14 @@
+{
+  "min_trigger_rms": 0.012,
+  "pause_min_trigger_rms": 0.0097,
+  "min_acoustic_confidence_percent": 65,
+  "min_text_match": 1.0,
+  "wake_min_text_match": 0.88,
+  "exact_command_only": true,
+  "allow_partial_triggers": false,
+  "multiword_partial_stable_frames": 3,
+  "single_word_partial_stable_frames": 3,
+  "playback_interrupt_stable_frames": 1,
+  "playback_interrupt_min_rms": 0.0018,
+  "playback_interrupt_min_acoustic_confidence_percent": 55
+}

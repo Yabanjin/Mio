@@ -1,0 +1,2 @@
+# One command per line. Requires a Vosk model for the command language.
+mio stop flirting

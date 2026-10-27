@@ -1,0 +1,15 @@
+{
+  "model": "mistralai_ministral-3-8b-instruct-2512-abliterated",
+  "api_identifier": "mistralai_ministral-3-8b-instruct-2512-abliterated",
+  "config": {
+    "gpu": {
+      "ratio": 1.0,
+      "mainGpu": 1,
+      "splitStrategy": "favorMainGpu",
+      "disabledGpus": [
+        0
+      ]
+    },
+    "gpuStrictVramCap": true
+  }
+}

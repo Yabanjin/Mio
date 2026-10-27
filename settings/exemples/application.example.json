@@ -1,0 +1,7 @@
+{
+  "profile_id": "default",
+  "language": "en",
+  "data_directory": "<choose a user data directory>",
+  "services_configuration": "services.example.json",
+  "hardware_configuration": "materiel.example.json"
+}

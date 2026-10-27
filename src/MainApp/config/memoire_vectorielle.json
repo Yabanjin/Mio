@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "url": "http://127.0.0.1:9893",
+  "search_timeout_seconds": 3,
+  "max_prompt_chars": 3100,
+  "profile_budget_chars": 1600,
+  "recall_budget_chars": 1500,
+  "query_chars": 1800,
+  "max_new_facts_per_turn": 2,
+  "extraction_batch_size": 2,
+  "extraction_batch_spacing_seconds": 3.0,
+  "extraction_source_chars": 1600,
+  "extraction_max_tokens": 900
+}

@@ -1,0 +1,5 @@
+{
+  "name": "fr_FR-upmc-jessica",
+  "model_file": "fr_FR-upmc-medium.onnx",
+  "config_file": "fr_FR-upmc-medium.onnx.json"
+}

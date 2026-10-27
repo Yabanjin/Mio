@@ -1,0 +1,3 @@
+# One command per line. Requires a Vosk model for the command language.
+go to sleep
+sleep mio

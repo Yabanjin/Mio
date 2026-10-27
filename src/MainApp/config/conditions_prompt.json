@@ -1,0 +1,29 @@
+{
+  "Child": [
+    "enfant",
+    "child"
+  ],
+  "Adult": [
+    "femme",
+    "woman",
+    "female"
+  ],
+  "child_roles": [
+    "child"
+  ],
+  "woman_roles": [
+    "woman",
+    "female"
+  ],
+  "child_prompt_names": [
+    "child"
+  ],
+  "woman_prompt_names": [
+    "adult"
+  ],
+  "femme_block_seconds": 1800,
+  "face_arrival_confirm_seconds": 1.5,
+  "child_face_confirm_seconds": 10,
+  "woman_face_confirm_seconds": 60,
+  "face_arrival_reset_seconds": 10
+}

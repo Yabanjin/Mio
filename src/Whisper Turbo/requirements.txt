@@ -1,0 +1,8 @@
+faster-whisper==1.2.1
+ctranslate2==4.8.3
+numpy==2.4.6
+scipy==1.17.1
+soundfile==0.14.0
+langid==1.1.6
+# Install separately from https://download.pytorch.org/whl/cu126:
+# torch==2.8.0+cu126 (CUDA libraries and exact token probabilities on GPU)

@@ -1,0 +1,5 @@
+{
+  "llm_device": "<GPU or CPU>",
+  "other_ml_device": "<GPU or CPU>",
+  "device_ids": "<detect during installation>"
+}

@@ -1,0 +1,13 @@
+{
+  "host": "127.0.0.1",
+  "port": 9893,
+  "model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+  "max_results": 3,
+  "min_similarity": 0.42,
+  "max_fact_chars": 350,
+  "first_active_id": 1,
+  "embedding_cache_size": 128,
+  "cpu_threads": 2,
+  "device": "cuda:0",
+  "gpu_uuid": "0"
+}

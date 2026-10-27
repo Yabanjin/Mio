@@ -1,0 +1,54 @@
+{
+  "python": "env/Scripts/python.exe",
+  "services_gpu": "0",
+  "startup_timeout_seconds": 180,
+  "load_llm": true,
+  "external_services": [
+    {
+      "name": "LM Studio",
+      "port": 1234,
+      "executable": "",
+      "arguments": [
+        "server",
+        "start"
+      ],
+      "working_directory": ""
+    },
+    {
+      "name": "Agent DVR",
+      "port": 8090,
+      "executable": "",
+      "arguments": [],
+      "working_directory": ""
+    },
+    {
+      "name": "CodeProject.AI",
+      "port": 32168,
+      "executable": "",
+      "arguments": [],
+      "working_directory": ""
+    },
+    {
+      "name": "VoiceChanger",
+      "port": 18000,
+      "executable": "",
+      "arguments": [
+        "cui",
+        "--https",
+        "false",
+        "--no_cui",
+        "True"
+      ],
+      "working_directory": ""
+    }
+  ],
+  "resources": {
+    "MIO_WHISPER_MODELS": "src/Whisper Turbo/models",
+    "MIO_PIPER_MODELS": "src/PiperTTS/models",
+    "MIO_MELO_CACHE": "src/MeloTTS/hf_cache",
+    "MIO_MEMORY_MODELS": "src/MemoireVectorielle/models",
+    "MIO_VOSK_MODEL": "src/VoskServer/models/vosk-model-small-en-us-0.15",
+    "MIO_SILERO_MODEL": "src/SileroVAD/silero_vad.onnx",
+    "MIO_SPEAKER_MODEL": "src/huggingface/speechbrain/spkrec-ecapa-voxceleb"
+  }
+}

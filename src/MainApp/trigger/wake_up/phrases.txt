@@ -1,0 +1,5 @@
+# One command per line. Requires a Vosk model for the command language.
+hey mio
+are you there mio
+wake up mio
+wake up

@@ -1,0 +1,4 @@
+{
+  "enabled": true,
+  "instruction": "Local computer date and time at request submission: {datetime} ({weekday}, UTC{offset}). This updated clock is the reference for today, yesterday, tomorrow and the current time, even if history contains an older date. Distinguish the current date from a birth date or birthday. Use this information when relevant rather than announcing the time with every reply. Follow the language rules of the active mode."
+}

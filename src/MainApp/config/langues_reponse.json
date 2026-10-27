@@ -1,0 +1,114 @@
+{
+  "allowed": [
+    "fr",
+    "en",
+    "ja"
+  ],
+  "temperature": 0.3,
+  "min_detection_letters": 40,
+  "min_rejection_confidence": 0.95,
+  "forbidden_german_words": [
+    "heute",
+    "helft",
+    "hilft",
+    "nicht",
+    "danke",
+    "bitte",
+    "guten",
+    "möchte",
+    "koennen",
+    "können",
+    "tschüss"
+  ],
+  "repair_instruction": "Rewrite using the languages allowed by the active mode, favoring {language}. Remove disallowed languages and unsolicited repeated translations. Keep the reply short. Output only the corrected reply.",
+  "isolated_terms": [
+    "Mio",
+    "g",
+    "kg",
+    "mg",
+    "ml",
+    "cl",
+    "l",
+    "cm",
+    "mm"
+  ],
+  "instruction": "Write units and numbers in full in the language of each passage. In Japanese, use kanji for numbers. Mio can be written ミオ in a Japanese passage.",
+  "child_instruction": "Child mode: use the configured child language. Write numbers and units in full. Reply briefly unless details are requested.",
+  "child_repair_instruction": "Rewrite entirely in {language}. Respect the proper names supplied by configuration. Output only the corrected reply.",
+  "family_names_instruction": "Use only names supplied by recognition or the local profile. Use only established family relationships.",
+  "french_only_allowed_names": [
+    "ミオ"
+  ],
+  "mode_instructions": {
+    "Normal": "Normal mode: answer in the requested language among English, French and Japanese. Use English by default when the language is unclear. Mixing languages is welcome when natural or requested. Be warm, lively and straightforward, using only the relationship information provided. Give one answer rather than repeating it in several languages unless asked.",
+    "Adult": "Adult mode: use the language specified for this turn, with English as the default. Keep a friendly, natural tone. You can be playful when appropriate, while respecting the relationship information actually provided. Respect a refusal or change of topic immediately. Child mode takes priority and excludes flirting.",
+    "Child": "Child mode: use the language specified for this turn, with English as the default. Be gentle, clear and patient. Offer games, stories or discoveries suited to what the child tells you. Focus on the child and their interests; bring up family only when relevant. Keep the conversation age-appropriate, without flirting or sexual content. For a dangerous request, suggest a safe activity and help from a trusted adult when needed. A child being visible to the camera does not mean they are the person speaking."
+  },
+  "mode_allowed": {
+    "Normal": [
+      "fr",
+      "en",
+      "ja"
+    ],
+    "Adult": [
+      "fr",
+      "en"
+    ],
+    "Child": [
+      "en"
+    ]
+  },
+  "turn_instruction": "For this turn, the main language is {language}. Follow the active mode rules. Answer the request once, without repeating the same idea in translation unless explicitly requested. Earlier messages are context, not examples to copy.",
+  "proper_names": [
+    "Mio",
+    "ミオ"
+  ],
+  "short_detection_letters": 4,
+  "latin_language_markers": {
+    "fr": [
+      "bonjour",
+      "salut",
+      "merci",
+      "oui",
+      "non",
+      "je",
+      "suis",
+      "vous",
+      "veux",
+      "comprends",
+      "entends",
+      "avec",
+      "pour",
+      "voici",
+      "recette",
+      "parle",
+      "peux",
+      "bien"
+    ],
+    "en": [
+      "hello",
+      "hi",
+      "yes",
+      "thanks",
+      "thank",
+      "please",
+      "sorry",
+      "am",
+      "are",
+      "is",
+      "you",
+      "your",
+      "here",
+      "understand",
+      "hear",
+      "with",
+      "would",
+      "like",
+      "recipe",
+      "speak",
+      "can"
+    ]
+  },
+  "default_language": "English",
+  "child_language": "English"
+}
