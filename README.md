@@ -15,3 +15,6 @@ Thank you to the ANIMATE team for their work. Visit the [ANIMATE website](https:
 ![Mio avatar and chat window](images/examples/mio-chat-and-avatar.png)
 
 ![Mio desktop shortcut](images/examples/mio-desktop-shortcut.png)
+
+Join me on Patreon for support the developpement of Mio app https://www.patreon.com/cw/Yaban_racing
+Or give me a tip if you like my code and find that usefull https://ko-fi.com/yabanjin
