@@ -1,0 +1,4 @@
+{
+  "url": "http://127.0.0.1:9881/tts",
+  "health_url": "http://127.0.0.1:9881/health"
+}

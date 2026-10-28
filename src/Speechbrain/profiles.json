@@ -1,4 +1,33 @@
 {
   "match_threshold": 0.26,
-  "profiles": []
+  "profiles": [
+    {
+      "name": "User",
+      "role": "adult",
+      "prompt": "Normal",
+      "authorized": true,
+      "reference_files": []
+    },
+    {
+      "name": "Child",
+      "role": "child",
+      "prompt": "Child",
+      "authorized": true,
+      "reference_files": []
+    },
+    {
+      "name": "Adult",
+      "role": "woman",
+      "prompt": "Adult",
+      "authorized": true,
+      "reference_files": []
+    },
+    {
+      "name": "Mio",
+      "role": "assistant",
+      "prompt": null,
+      "authorized": true,
+      "reference_files": []
+    }
+  ]
 }

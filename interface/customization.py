@@ -5,6 +5,9 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from tkinter.scrolledtext import ScrolledText
 from settings_store import catalog, read, validate, write, display_label
+from field_help import field_help, page_help
+from settings_pages import SECTIONS
+from ui_interaction import attach
 
 
 class Customization(tk.Toplevel):
@@ -15,14 +18,25 @@ class Customization(tk.Toplevel):
         self.minsize(760, 500)
         self.on_saved = on_saved
         self.on_reload = on_reload
+        self.active_section = 'Mio — Main settings'
         self.path = None
         self.original = None
         self.fields = []
+        self.section = tk.StringVar(value='Mio — Main settings')
         self.entries = catalog()
         self.protocol('WM_DELETE_WINDOW', self.close)
         ttk.Label(self, text='Select a section, edit its fields, then save. '
                   'Settings will apply when the chat next starts.', wraplength=940,
                   padding=12).pack(fill='x')
+        navigation = ttk.Frame(self, padding=(12, 0, 12, 8))
+        navigation.pack(fill='x')
+        ttk.Label(navigation, text='Menu').pack(side='left', padx=(0, 8))
+        menu = ttk.Combobox(navigation, textvariable=self.section, state='readonly', width=28,
+                            values=SECTIONS)
+        menu.pack(side='left')
+        menu.bind('<<ComboboxSelected>>', self.change_section)
+        self.section_hint = ttk.Label(navigation, text='', wraplength=550)
+        self.section_hint.pack(side='left', padx=12)
         panes = ttk.Panedwindow(self, orient='horizontal')
         panes.pack(fill='both', expand=True, padx=10)
         left = ttk.Frame(panes)
@@ -50,11 +64,34 @@ class Customization(tk.Toplevel):
         self.status.pack(side='left')
         ttk.Button(bottom, text='Save', command=self.save).pack(side='right', padx=5)
         if on_reload:
-            ttk.Button(bottom, text='Reload to apply changes', command=self.reload).pack(side='right', padx=5)
+            self.reload_button = ttk.Button(bottom, text='Reload Mio', command=self.reload)
+            self.reload_button.pack(side='right', padx=5)
         ttk.Button(bottom, text='Close', command=self.close).pack(side='right')
         self.list.bind('<<ListboxSelect>>', self.select)
         self.list.selection_set(0)
         self.load(0)
+        attach(self)
+
+    def change_section(self, _event=None):
+        if not self.leave():
+            self.section.set(self.active_section)
+            return
+        self.active_section = self.section.get()
+        self.entries = catalog(self.active_section)
+        self.list.delete(0, 'end')
+        for label, _ in self.entries:
+            self.list.insert('end', label)
+        self.list.selection_set(0)
+        self.load(0)
+        is_main = self.active_section.startswith('Mio —')
+        if self.on_reload:
+            if is_main:
+                self.reload_button.pack(side='right', padx=5)
+            else:
+                self.reload_button.pack_forget()
+        self.section_hint.configure(text=('Save, then Reload Mio. External servers stay running.' if is_main else
+            'Save this module separately. Reload Mio does not restart this server. Server settings need its own restart.'))
+        attach(self)
 
     def changed(self):
         try:
@@ -83,6 +120,15 @@ class Customization(tk.Toplevel):
 
     def load(self, index):
         self.index = index
+        if not self.entries:
+            self.path = None
+            self.original = None
+            self.title_label.configure(text=self.active_section)
+            for widget in self.area.winfo_children():
+                widget.destroy()
+            ttk.Label(self.area, text='This module has no editable configuration file yet. '
+                      'Configure it in its own application.', wraplength=500).pack(padx=12, pady=12)
+            return
         label, self.path = self.entries[index]
         self.original = read(self.path)
         self.title_label.configure(text=label)
@@ -96,10 +142,13 @@ class Customization(tk.Toplevel):
             widget.destroy()
         self.fields = []
         self.template = value
+        ttk.Label(self.area, text=page_help(self.path, self.raw.get()), wraplength=530,
+                  foreground='#475569', justify='left').pack(fill='x', padx=8, pady=(4, 8))
         if self.path.suffix != '.json' or self.raw.get():
             self.text = ScrolledText(self.area, wrap='word', font=('Segoe UI', 11), undo=True)
             self.text.pack(fill='both', expand=True)
             self.text.insert('1.0', json.dumps(value, ensure_ascii=False, indent=2) if self.path.suffix == '.json' else value)
+            attach(self.area)
             return
         canvas = tk.Canvas(self.area, highlightthickness=0)
         bar = ttk.Scrollbar(self.area, command=canvas.yview)
@@ -130,7 +179,7 @@ class Customization(tk.Toplevel):
                 is_lines = isinstance(data, list) and all(isinstance(x, str) for x in data)
                 structured = isinstance(data, (dict, list)) and not is_lines
                 content = '\n'.join(data) if is_lines else (json.dumps(data, ensure_ascii=False, indent=2) if structured else str(data) if data is not None else 'null')
-                control = tk.Text(form, height=min(10, max(2, content.count('\n') + 2)),
+                control = tk.Text(form, height=min(10, max(4, content.count('\n') + 2)),
                                   wrap='word', font=('Segoe UI', 10), undo=True)
                 control.pack(fill='x')
                 control.insert('1.0', content)
@@ -151,8 +200,14 @@ class Customization(tk.Toplevel):
                     if type(old) in (int, float):
                         return type(old)(text.strip())
                     return text
+            help_label = ttk.Label(form, text=field_help(self.path, keys, data),
+                                   wraplength=510, foreground='#475569', justify='left')
+            help_label.pack(fill='x', pady=(3, 8))
+            help_label.bind('<Configure>', lambda event: event.widget.configure(
+                wraplength=max(200, event.width - 12)))
             self.fields.append((keys, get))
         add(value)
+        attach(self.area)
 
     def value(self):
         if self.path.suffix != '.json':
@@ -182,12 +237,21 @@ class Customization(tk.Toplevel):
         self.render(value)
 
     def save(self):
+        if self.path is None:
+            return True
         try:
             value = self.value()
             if self.path.suffix == '.json':
                 validate(value, self.original)
             elif not value.strip() and self.path.parent.name == 'prompt':
                 raise ValueError('A prompt cannot be empty.')
+            if self.path.parent.name == 'components':
+                from urllib.parse import urlsplit
+                for key, item in value.items():
+                    if key == 'url' or key.endswith('_url'):
+                        parsed = urlsplit(item)
+                        if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password:
+                            raise ValueError(f'{key}: enter an HTTP(S) URL without credentials')
             write(self.path, value)
             self.original = copy.deepcopy(value)
             self.status.configure(text='Saved — applies on startup')

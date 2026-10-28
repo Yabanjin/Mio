@@ -6,7 +6,8 @@ from pathlib import Path
 import threading
 import wave
 import onnxruntime
-onnxruntime.preload_dlls(directory="")
+# Reuse CUDA/cuDNN DLLs supplied by the shared PyTorch environment.
+onnxruntime.preload_dlls()
 
 from piper import PiperVoice
 from piper.config import SynthesisConfig, PiperConfig

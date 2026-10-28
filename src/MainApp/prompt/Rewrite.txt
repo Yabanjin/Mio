@@ -1,1 +1,1 @@
-The previous reply was too long or repeated a recent reply. Answer the latest message again in one or two short, natural sentences focused on the request. Keep the tone, mode and allowed languages. Output only the revised reply.
+The previous reply was too long or repeated a recent answer. Answer the latest request again, briefly and naturally. Keep the active mode and permitted language. Spell values and units out in words. Do not mention this correction instruction.

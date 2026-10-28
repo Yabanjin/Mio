@@ -1,6 +1,5 @@
 {
   "model": "mistralai_ministral-3-8b-instruct-2512-abliterated",
-  "api_identifier": "mistralai_ministral-3-8b-instruct-2512-abliterated",
   "config": {
     "gpu": {
       "ratio": 1.0,

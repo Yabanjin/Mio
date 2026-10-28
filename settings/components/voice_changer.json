@@ -1,0 +1,4 @@
+{
+  "configuration_url": "http://127.0.0.1:18000/api/configuration-manager/configuration",
+  "conversion_url": "http://127.0.0.1:18000/api/voice-changer/convert_chunk"
+}

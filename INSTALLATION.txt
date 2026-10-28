@@ -1,0 +1,38 @@
+Mio — clean installation
+========================
+
+Ready-made test installers
+--------------------------
+Open 00 - INSTALLATEURS MIO and choose Mio Setup FR Test.exe for French voice
+commands or Mio Setup EN Test.exe for English voice commands. Read README_FR.txt
+or README_EN.txt there. Each EXE stands alone. Select an empty destination.
+Internet is required for Python dependencies. These test EXEs retain existing
+external connection settings for local testing; no personal memories or voice
+samples are included.
+
+Installing from source
+----------------------
+Run Install Mio.cmd to create the shared Python environment and install internal
+dependencies. Public model resources are present in this local source checkout;
+a Git-only checkout does not include the large model binaries. Obtain and place
+the required models before starting the services. Missing resources are reported
+by the installation checker; model download/setup is not yet fully automated.
+
+Run Launch Mio.vbs, open Customize, and set your external server addresses,
+program locations, selected language model, audio devices and GPU assignment.
+External program locations in the source are generic and must be configured.
+LM Studio, its language model, Agent DVR, CodeProject.AI and VoiceChanger are not
+installed by Mio. Optional startup utilities are disabled by default.
+
+Save, then press Start. Windows confirmation is required for Agent DVR service
+control. Initial vector memory and identity facts are empty. User, Child and
+Adult are generic text-author labels; no voices are enrolled. Configure facial
+authorization in its external service. Reload Mio applies main-engine changes;
+module-specific settings may need that module's own restart.
+
+The current GPU defaults use GPU 0 for services and GPU 1 for the language model.
+Single-GPU operation needs the manual settings described in the manuals and
+still requires full validation. This release requires NVIDIA/CUDA.
+
+Use the X to stop Mio. Use Uninstall Mio to remove an installed copy and its
+local data after confirmation. External applications are retained.

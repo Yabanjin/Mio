@@ -15,7 +15,8 @@ function Invoke-Pip([string[]]$Arguments) {
     if ($LASTEXITCODE -ne 0) { throw "pip failed (exit code $LASTEXITCODE): $($Arguments -join ' ')" }
 }
 
-Invoke-Pip -Arguments @('install','--upgrade','pip','setuptools','wheel')
+# Librosa 0.9 / Melo still import pkg_resources, removed in newer setuptools.
+Invoke-Pip -Arguments @('install','--upgrade','pip','setuptools==80.9.0','wheel')
 if (-not $SkipTorch) {
     Invoke-Pip -Arguments @('install','--index-url','https://download.pytorch.org/whl/cu126',
                  'torch==2.8.0+cu126','torchaudio==2.8.0+cu126')

@@ -1,4 +1,5 @@
 /env/
+/dist/
 /cache/
 /data/
 /tmp/
@@ -17,6 +18,8 @@
 *.mp4
 *.png
 !/images/examples/*.png
+!/images/branding/*.png
+!/images/mio.png
 *.jpg
 *.jpeg
 *.gguf
@@ -36,3 +39,11 @@
 /Proto interface graphique/
 /settings/interface.local.json
 **/torch_cache/
+
+# Generated installers and runtime-only material
+/00 - INSTALLATEURS MIO/*.exe
+*.copying
+*.sqlite3-wal
+*.sqlite3-shm
+/.mio-install.json
+/INSTALL-INCOMPLETE.txt

@@ -1,0 +1,5 @@
+{
+  "url": "http://127.0.0.1:1234/v1/chat/completions",
+  "health_url": "http://127.0.0.1:1234/api/v0/models",
+  "model": "mistralai_ministral-3-8b-instruct-2512-abliterated"
+}

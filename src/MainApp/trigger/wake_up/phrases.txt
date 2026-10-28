@@ -1,5 +1,4 @@
-# One command per line. Requires a Vosk model for the command language.
+# One English voice command per line.
 hey mio
 are you there mio
 wake up mio
-wake up

@@ -4,7 +4,29 @@ Mio is a local voice conversation application under development, coded by GPT wi
 
 The repository contains Mio's source code and configuration examples. The interface, prompts, and default replies are in English and can be customized.
 
-Open **interface/Launch Mio.vbs**, choose **Customize**, then **Start** when your settings are ready. The launcher and interface code are together in the [interface folder](interface). Use **Reload to apply changes** after editing a running session. See [USER-GUIDE.txt](USER-GUIDE.txt) for setup and usage.
+Open **interface/Launch Mio.vbs**, choose **Customize**, then **Start** when your settings are ready. The launcher and interface code are together in the [interface folder](interface). Use **Reload Mio** after editing a running session. See [USER-GUIDE.txt](USER-GUIDE.txt) for setup and usage.
+
+## Windows one-click installers
+
+The Windows one-click installers are grouped in **[00 - INSTALLATEURS MIO](00%20-%20INSTALLATEURS%20MIO)**:
+
+- **Mio Setup FR Test.exe** — French voice commands.
+- **Mio Setup EN Test.exe** — English voice commands.
+- **[French manual](00%20-%20INSTALLATEURS%20MIO/README_FR.txt)** and **[English manual](00%20-%20INSTALLATEURS%20MIO/README_EN.txt)** — completed features, remaining work and installation instructions.
+
+FR and EN refer to voice-command recognition; both currently use the English
+configuration interface. Each installer is a standalone EXE.
+
+The EXEs are currently available in the local distribution folder. They are
+about 3.47 GB each and are not stored in the Git source repository; the GitHub
+folder currently contains the manuals. Public binary download links remain to
+be provided through suitable large-file hosting.
+
+## Installation from source
+
+Source defaults are generic, with empty initial memory and no enrolled voices.
+Configure your external programs and devices in **Customize** before **Start**.
+See [INSTALLATION.txt](INSTALLATION.txt) for installing from source.
 
 ## Examples
 

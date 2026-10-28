@@ -5,7 +5,11 @@
   "compute_type": "float16",
   "beam_size": 1,
   "temperature": 0.0,
-  "allowed_languages": ["fr", "en", "ja"],
+  "allowed_languages": [
+    "fr",
+    "en",
+    "ja"
+  ],
   "text_language_min_letters": 40,
   "text_language_confidence": 0.95,
   "no_speech_threshold": 0.6,

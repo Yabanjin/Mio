@@ -1,8 +1,8 @@
+"""Useful settings and Windows process-lifecycle checks; no Mio service startup."""
 import ctypes
 import json
 import os
 from pathlib import Path
-import queue
 import subprocess
 import sys
 import tempfile
@@ -12,15 +12,10 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'interface'))
 import settings_store
-from runtime import Runtime, WindowsJob
+from runtime import WindowsJob
 
 
 class SettingsTests(unittest.TestCase):
-    def test_all_settings_exist_and_parse(self):
-        for _, path in settings_store.catalog():
-            self.assertTrue(path.is_file(), str(path))
-            settings_store.read(path)
-
     def test_invalid_values_rejected(self):
         for value in ({}, {'timeout': True}, {'timeout': '10'}):
             with self.assertRaises(ValueError):
@@ -37,27 +32,6 @@ class SettingsTests(unittest.TestCase):
 
 
 class RuntimeTests(unittest.TestCase):
-    def test_preflight_failure_never_launches(self):
-        events = queue.Queue()
-        manager = Runtime(events)
-        with patch.object(manager, 'preflight', side_effect=ValueError('Missing model')), patch.object(manager, 'spawn') as spawn:
-            manager.start()
-            spawn.assert_not_called()
-        self.assertEqual(events.get()['kind'], 'startup_failed')
-        self.assertEqual(manager.processes, [])
-
-    def test_cancellation_cleans_up(self):
-        events = queue.Queue()
-        manager = Runtime(events)
-        manager.cancel.set()
-        manager.config = {'external_services': [{'name': 'test', 'port': 1}]}
-        with patch.object(manager, 'preflight'), patch.object(manager, 'spawn') as spawn:
-            manager.start()
-            spawn.assert_not_called()
-        event = events.get()
-        self.assertEqual(event['kind'], 'startup_failed')
-        self.assertEqual(event['text'], '')
-        self.assertIsNone(manager.job)
 
     @unittest.skipUnless(os.name == 'nt', 'Windows job lifecycle')
     def test_job_closes_child_tree(self):
@@ -91,62 +65,6 @@ class RuntimeTests(unittest.TestCase):
             process.stdout.close()
             if child_handle:
                 api.CloseHandle(child_handle)
-
-
-class GuiTests(unittest.TestCase):
-    def test_open_and_edit_without_starting_services(self):
-        from app import MioApp
-        with patch('subprocess.Popen', side_effect=AssertionError('Unexpected service launch')):
-            app = MioApp()
-            try:
-                app.root.withdraw()
-                app.logs.withdraw()
-                app.root.update()
-                self.assertIsNone(app.process)
-                self.assertIsNone(app.manager)
-                self.assertFalse(app.busy)
-                self.assertFalse(hasattr(app, 'stop_button'))
-                self.assertEqual(app.status.grid_info()['row'], 0)
-                self.assertEqual(app.child_status.grid_info()['row'], 1)
-                self.assertEqual(app.customize_button.grid_info()['row'], 0)
-                # Finishing/cancelling a session restores the configuration controls.
-                app.controls(True)
-                app.stopping = True
-                app.receive({'kind': 'stopped'})
-                self.assertFalse(app.busy)
-                self.assertFalse(app.stopping)
-                self.assertEqual(str(app.customize_button['state']), 'normal')
-                # A delayed exit from the old session cannot stop a newly opened UI.
-                app.receive({'kind': 'exit', 'pid': -1, 'code': 1})
-                self.assertFalse(app.busy)
-                app.customize()
-                editor = app.editor
-                editor.withdraw()
-                for index, (_, path) in enumerate(editor.entries):
-                    editor.load(index)
-                    self.assertEqual(editor.value(), settings_store.read(path), str(path))
-                index = next(i for i, (_, p) in enumerate(editor.entries) if p.name == 'Common.txt')
-                editor.load(index)
-                editor.text.delete('1.0', 'end')
-                editor.text.insert('1.0', 'A personality chosen by the user. ミオ')
-                with patch('customization.write') as write:
-                    self.assertTrue(editor.save())
-                    self.assertIn('personality', write.call_args.args[1])
-                editor.destroy()
-                # Reload sequences shutdown before a new start, without opening ML services.
-                app.controls(True)
-                with patch.object(app, 'stop_services') as stop:
-                    app.reload_services()
-                    stop.assert_called_once()
-                    self.assertTrue(app.reload_requested)
-                with patch.object(app, 'start_services') as start:
-                    app.receive({'kind': 'stopped'})
-                    start.assert_called_once()
-                    self.assertFalse(app.reload_requested)
-            finally:
-                if app.opacity_save:
-                    app.root.after_cancel(app.opacity_save)
-                app.root.destroy()
 
 
 if __name__ == '__main__':

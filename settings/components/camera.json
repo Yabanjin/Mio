@@ -1,0 +1,4 @@
+{
+  "snapshot_url": "http://127.0.0.1:8090/liveimage.jpg?oid=1&size=640x480",
+  "recognition_url": "http://127.0.0.1:32168/v1/vision/face/recognize"
+}

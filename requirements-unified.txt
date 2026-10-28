@@ -3,6 +3,7 @@
 # MeloTTS 0.1.2 est charge depuis vendor/MeloTTS ; sa contrainte originale
 # transformers==4.27.4 ne peut pas cohabiter avec fastembed-gpu==0.9.0.
 numpy==1.26.4
+setuptools==80.9.0
 scipy==1.17.1
 onnxruntime-gpu==1.23.2
 pywebrtc-audio==0.2.0

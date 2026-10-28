@@ -1,6 +1,6 @@
-# Words removed from transcriptions before sending to the LLM; one entry per line.
+# Command words removed before sending a transcription to the model.
 stop
 mio
 hey mio
 be quiet
-silence
+stop talking

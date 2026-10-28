@@ -10,6 +10,7 @@ import subprocess
 import threading
 import time
 import unicodedata
+import uuid
 from collections import deque
 
 os.system("chcp 65001 > nul")
@@ -41,6 +42,7 @@ from reply_quality import repetition_reason
 from http_sessions import http_session
 from current_time_context import with_current_time
 from speaker_identity import SPEAKER_RECOGNIZER
+from typed_chat import author_identity
 from progressive_stt import ProgressiveTranscriber
 from cancellable_work import CancellableWork, TurnCancelled
 import chat_events
@@ -78,18 +80,20 @@ with open(os.path.join(os.path.dirname(__file__), '..', 'LM Studio', 'mio-load.j
     MODEL_SETTINGS = json.load(settings_file)
 with open(os.path.join(os.path.dirname(__file__), 'config', 'prononciation.json'), encoding='utf-8') as settings_file:
     PRONUNCIATION = json.load(settings_file)
-URL_STT = "http://127.0.0.1:9000/v1/audio/transcriptions"
-URL_LLM = CONNECTION['llm_url']
-URL_PIPER_TTS = "http://127.0.0.1:9881/tts"
-URL_MELO_TTS = "http://127.0.0.1:9882/tts"
-URL_VC_CONFIG = CONNECTION['rvc_config_url']
-URL_VC_CONVERT_CHUNK = CONNECTION['rvc_convert_url']
+from component_connections import load_connections
+COMPONENTS = load_connections()
+URL_STT = COMPONENTS['transcription']['url']
+URL_LLM = COMPONENTS['llm']['url']
+URL_PIPER_TTS = COMPONENTS['french_voice']['url']
+URL_MELO_TTS = COMPONENTS['multilingual_voice']['url']
+URL_VC_CONFIG = COMPONENTS['voice_changer']['configuration_url']
+URL_VC_CONVERT_CHUNK = COMPONENTS['voice_changer']['conversion_url']
 
 # None uses the default Windows audio output device.
 TTS_DEVICE_INDEX = CONNECTION['output_device']
 SAMPLE_RATE = 16000
 AUDIO_BLOCK_SAMPLES = 1280  # 80 ms blocks at 16 kHz.
-LLM_MODEL_NAME = MODEL_SETTINGS.get('api_identifier') or MODEL_SETTINGS['model']
+LLM_MODEL_NAME = COMPONENTS['llm']['model']
 WHISPER_ALLOWED_LANGUAGES = {
     "fr": "fr",
     "french": "fr",
@@ -199,8 +203,8 @@ if not 0 <= WHISPER_JA_MIN_TOKEN_CONFIDENCE <= 1:
 if UNKNOWN_FACE_CONFIRM_SECONDS <= 0 or FACE_GRACE_SECONDS <= 0 or VOICE_IDLE_SECONDS <= 0 or not 0 <= WHISPER_MIN_TOKEN_CONFIDENCE <= 1:
     raise ValueError("Invalid Whisper timings or threshold in fonctionnement.json")
 FACE_PRESENCE = FacePresence(interval_seconds=float(RUNTIME_CONFIG["face_poll_seconds"]),
-                             agent_snapshot_url=CONNECTION['camera_snapshot_url'],
-                             face_recognition_url=CONNECTION['face_recognition_url'],
+                             agent_snapshot_url=COMPONENTS['camera']['snapshot_url'],
+                             face_recognition_url=COMPONENTS['camera']['recognition_url'],
                              min_confidence=float(CONNECTION['face_min_confidence']))
 PROMPT_CONDITIONS = load_json_config(
     os.path.join(MAINAPP_DIR, "config", "conditions_prompt.json"),
@@ -432,6 +436,9 @@ def recognition_sentence(names, template):
 
 def speaker_context_instruction(speaker_identity):
     identity = speaker_identity or {}
+    if identity.get('source') == 'text':
+        names = recognition_names(identity.get('names', []))
+        return recognition_sentence(names, RECOGNITION_CONTEXT.get('text_template', "{names} is writing to you in the chat."))
     names = recognition_names(identity.get("names", []), voice=True)
     return recognition_sentence(names, RECOGNITION_CONTEXT["voice_template"])
 
@@ -2134,16 +2141,16 @@ def ask_llm(user_text, request_generation, speaker_identity=None, detected_langu
             return
         print(flush=True)
 
-        history_parts = split_tts_by_language(full_reply, reply_language)
+        display_reply = full_reply.strip()
         with state_lock:
             if not turn_is_current(request_generation):
                 return
             chat_history.extend([
                 {"role": "user", "content": user_text},
-                {"role":"assistant", "content":" ".join(part for part, _lang in history_parts)},
+                {"role":"assistant", "content":display_reply},
             ])
             chat_events.message('reply-' + timing['id'],
-                                ' '.join(part for part, _lang in history_parts),
+                                display_reply,
                                 ['Mio'], complete=True, mio=True)
         try:
             capture_async(
@@ -2180,7 +2187,7 @@ def verify_startup_services():
          lambda data: data.get("service") == "MeloTTS" and {"JP", "EN-US"}.issubset(data.get("voices", []))),
         ("Voice Changer", URL_VC_CONFIG,
          lambda data: data.get("input_sample_rate") == 22050 and data.get("output_sample_rate") == 22050),
-        ("LM Studio / LLM", CONNECTION['llm_models_url'],
+        ("LM Studio / LLM", COMPONENTS['llm']['health_url'],
          lambda data: any(model.get("state") == "loaded" and LLM_MODEL_NAME in model.get("id", "")
                           for model in data.get("data", []))),
     )
@@ -2191,8 +2198,61 @@ def verify_startup_services():
             raise RuntimeError(f"{name} is not ready or uses an old version")
 
 
+# UI commands are blocking reads, not polling. Only the current UI token is accepted.
+ui_text_queue = queue.Queue(maxsize=8)
+reload_main_requested = threading.Event()
+
+def read_ui_commands():
+    for line in sys.stdin:
+        try:
+            command = json.loads(line)
+            if not os.environ.get('MIO_UI_TOKEN') or command.get('token') != os.environ['MIO_UI_TOKEN']:
+                continue
+            if command.get('action') == 'reload':
+                reload_main_requested.set()
+                cancel_current_turn()
+                shutdown_event.set()
+                return
+            if command.get('action') == 'text':
+                text = str(command.get('text', '')).strip()
+                if text:
+                    identity = author_identity(command.get('author'))
+                    message_id = command.get('id')
+                    if not isinstance(message_id, str) or not re.fullmatch(r'typed-[a-f0-9]{32}', message_id):
+                        message_id = 'typed-' + uuid.uuid4().hex
+                    payload = {'text': text, 'identity': identity, 'id': message_id}
+                    ui_text_queue.put_nowait((payload, interrupt_generation))
+                    chat_events.message('user-' + message_id, text, identity['names'], complete=True)
+        except queue.Full:
+            chat_events.emit('error', key='typed-queue-full', text='Too many pending messages. Wait before sending again.')
+        except (ValueError, TypeError, OSError) as error:
+            chat_events.emit('error', key='typed-input-' + str(time.monotonic_ns()),
+                             text='Message not sent: ' + str(error))
+
+def handle_ui_text(payload):
+    text = payload['text']
+    # Typed input is not voice identification and never bypasses facial access.
+    if not FACE_PRESENCE.snapshot().has_known_person:
+        chat_events.emit('error', key='typed-face-' + str(time.monotonic_ns()),
+                         text='Message not sent: a recognized face is required. Copy the message below to try again: ' + text)
+        return
+    if not conversation_active or mio_paused:
+        wake_session()
+    generation = interrupt_generation
+    if not turn_is_current(generation):
+        chat_events.emit('error', key='typed-not-ready', text='Mio is not ready. Please send the message again: ' + text)
+        return
+    now = time.monotonic()
+    identity = dict(payload['identity'])
+    identity['_timing'] = {'id': payload['id'], 'finished_at': now, 'finalized_at': now}
+    chat_events.message('user-' + identity['_timing']['id'], text, identity['names'], complete=True)
+    ask_llm(text, generation, speaker_identity=identity)
+
+
 def main():
     global microphone, stt_processing, voice_wait_since, aec_client, vad_client, capture_thread, progressive_stt
+    if os.environ.get('MIO_UI_TOKEN'):
+        threading.Thread(target=read_ui_commands, daemon=True, name='Mio-UI-input').start()
     status = RuntimeStatus(READY_FILE)
     status_thread = None
     final_reason = "MainApp stopped"
@@ -2285,6 +2345,21 @@ def main():
                 shutdown_event.wait(0.02)
                 continue
             try:
+                typed = ui_text_queue.get_nowait()
+            except queue.Empty:
+                typed = None
+            if typed is not None:
+                typed, typed_generation = typed
+                if typed_generation != interrupt_generation:
+                    chat_events.emit('error', key='typed-cancelled-' + str(time.monotonic_ns()), text='Message cancelled after a state change: ' + typed['text'])
+                    continue
+                conversation_pending.set()
+                try:
+                    handle_ui_text(typed)
+                finally:
+                    conversation_pending.clear()
+                continue
+            try:
                 txt, confidence, language, identity, generation = progressive_stt.results.get(timeout=0.1)
             except queue.Empty:
                 continue
@@ -2359,7 +2434,8 @@ def main():
             capture_thread.join(timeout=2)
         if progressive_stt is not None:
             progressive_stt.close()
-        SPEAKER_RECOGNIZER.close()
+        if not reload_main_requested.is_set():
+            SPEAKER_RECOGNIZER.close()
         if aec_client is not None:
             aec_client.close()
         if vad_client is not None:
@@ -2367,6 +2443,11 @@ def main():
         FACE_PRESENCE.stop()
         if vosk_process is not None and vosk_process.poll() is None:
             vosk_process.terminate()
+            try:
+                vosk_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                vosk_process.kill()
+                vosk_process.wait(timeout=5)
         status.write(False, final_reason, failed=True)
         status.close()
 

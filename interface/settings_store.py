@@ -4,6 +4,7 @@ import math
 import os
 from pathlib import Path
 import tempfile
+from settings_pages import VIEWS, projected_read, projected_write, catalog as page_catalog
 
 ROOT = Path(__file__).resolve().parent.parent
 APPLICATION = ROOT / 'settings' / 'interface.json'
@@ -12,6 +13,8 @@ LOCAL_APPLICATION = ROOT / 'settings' / 'interface.local.json'
 
 def read(path):
     path = Path(path)
+    if path.resolve() in VIEWS:
+        return projected_read(path, read)
     if path.resolve() == APPLICATION.resolve() and LOCAL_APPLICATION.is_file():
         path = LOCAL_APPLICATION
     text = path.read_text(encoding='utf-8-sig')
@@ -44,6 +47,8 @@ def validate(value, template, location=''):
 
 def write(path, value):
     path = Path(path).resolve()
+    if path in VIEWS:
+        return projected_write(path, value, read, write)
     if path == APPLICATION.resolve():
         path = LOCAL_APPLICATION.resolve()
     if not path.is_relative_to(ROOT):
@@ -90,25 +95,5 @@ def display_label(value):
     return LABELS.get(text, text.replace('_', ' ').capitalize())
 
 
-def catalog():
-    main = ROOT / 'src' / 'MainApp'
-    entries = [('Installation and startup', APPLICATION)]
-    entries.append(('LLM model and GPU', ROOT / 'src/LM Studio/mio-load.json'))
-    prompts = {'Common': 'Identity and personality', 'Normal': 'Normal mode',
-               'Child': 'Child mode', 'Adult': 'Adult mode', 'Rewrite': 'Reply rewriting'}
-    for name, title in prompts.items():
-        entries.append((f'Prompts / {title}', main / 'prompt' / f'{name}.txt'))
-    groups = [('Automatic replies', main / 'reponse_auto', '*.json'),
-              ('Voice commands', main / 'trigger', '*.txt'),
-              ('Chat settings', main / 'config', '*.json')]
-    for label, folder, pattern in groups:
-        for path in sorted(folder.rglob(pattern)):
-            title = ' / '.join(display_label(part) for part in path.relative_to(folder).with_suffix('').parts)
-            entries.append((f'{label} / {title}', path))
-    for folder in ('MemoireVectorielle', 'Speechbrain', 'SileroVAD', 'VoskServer',
-                   'PiperTTS', 'MeloTTS', 'Whisper Turbo'):
-        base = ROOT / 'src' / folder
-        for path in sorted(base.glob('*.json')) + sorted((base / 'config').glob('*.json')):
-            entries.append((f'{display_label(folder)} / {display_label(path.stem)}', path))
-    entries.append(('Memory / Extraction prompt', ROOT / 'src/MemoireVectorielle/extraction_prompt.txt'))
-    return entries
+def catalog(section='Mio — Main settings'):
+    return page_catalog(ROOT, section, APPLICATION)

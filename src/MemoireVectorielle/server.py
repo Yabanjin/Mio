@@ -19,7 +19,8 @@ ROOT = Path(__file__).resolve().parent
 CONFIG = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
 os.environ["CUDA_VISIBLE_DEVICES"] = CONFIG["gpu_uuid"]
 import onnxruntime as ort
-ort.preload_dlls(directory="")
+# Reuse CUDA/cuDNN DLLs supplied by the shared PyTorch environment.
+ort.preload_dlls()
 from fastembed import TextEmbedding
 from memory_policy import normalized, legacy_state, legacy_subject, evidence_state, entity_key, CORRECTION, PROPERTY_MARKERS
 

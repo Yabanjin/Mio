@@ -11,7 +11,8 @@ import numpy as np
 EXECUTION = json.loads(Path(__file__).with_name("execution.json").read_text(encoding="utf-8"))
 os.environ["CUDA_VISIBLE_DEVICES"] = EXECUTION["gpu_uuid"]
 import onnxruntime as ort
-ort.preload_dlls(directory="")
+# Reuse CUDA/cuDNN DLLs supplied by the shared PyTorch environment.
+ort.preload_dlls()
 
 
 HOST = "127.0.0.1"

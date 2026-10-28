@@ -1,0 +1,4 @@
+{
+  "url": "http://127.0.0.1:9000/v1/audio/transcriptions",
+  "health_url": "http://127.0.0.1:9000/health"
+}

@@ -1,6 +1,6 @@
 {
-  "face_template": "Your face recognition sees {names}.",
-  "voice_template": "Your speaker recognition heard the voice of {names}.",
+  "face_template": "The camera recognizes {names}.",
+  "voice_template": "Voice recognition detected {names}.",
   "ignored_names": [
     "unknown",
     "inconnu",
@@ -8,17 +8,16 @@
   ],
   "self_voice_names": [
     "Mio",
-    "\u30df\u30aa"
+    "ミオ"
   ],
   "face_context_confirm_seconds": {
     "Child": 6,
     "Adult": 6
   },
   "aliases": {
-    "enfant": "Child",
+    "user": "User",
     "child": "Child",
-    "femme": "Adult",
-    "woman": "Adult",
-    "female": "Adult"
-  }
+    "adult": "Adult"
+  },
+  "text_template": "{names} is writing in the chat."
 }

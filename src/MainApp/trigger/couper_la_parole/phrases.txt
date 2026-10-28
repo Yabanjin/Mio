@@ -1,4 +1,4 @@
-# One command per line. Requires a Vosk model for the command language.
+# One English voice command per line.
 stop
-pause
 be quiet
+stop talking
