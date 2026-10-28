@@ -8,6 +8,8 @@ Open **interface/Launch Mio.vbs**, choose **Customize**, then **Start** when you
 
 ## Windows one-click installers
 
+**[Download the Windows installers — FR and EN (Google Drive)](https://drive.google.com/drive/folders/1T_UG55MI6s6P-QK2etLTrvDN8R605m0e?usp=sharing)**
+
 The Windows one-click installers are grouped in **[00 - INSTALLATEURS MIO](00%20-%20INSTALLATEURS%20MIO)**:
 
 - **Mio Setup FR Test.exe** — French voice commands.
@@ -17,10 +19,9 @@ The Windows one-click installers are grouped in **[00 - INSTALLATEURS MIO](00%20
 FR and EN refer to voice-command recognition; both currently use the English
 configuration interface. Each installer is a standalone EXE.
 
-The EXEs are currently available in the local distribution folder. They are
-about 3.47 GB each and are not stored in the Git source repository; the GitHub
-folder currently contains the manuals. Public binary download links remain to
-be provided through suitable large-file hosting.
+Download the EXEs from the Google Drive folder linked above. They are about
+3.47 GB each and are hosted separately from the Git source repository. The
+GitHub folder contains the installation manuals.
 
 ## Installation from source
 
