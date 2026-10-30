@@ -8,6 +8,39 @@ The clean distribution starts with generic prompts and profiles, empty initial m
 
 [Windows downloads](#windows-downloads) · [Features](#features) · [Setup](#getting-started) · [Screenshots](#screenshots) · [Current limits](#current-status-and-limits)
 
+## Screenshots
+
+The following are user-provided examples from a customized prototype installation. Names, French text, avatar poses and some diagnostic display reflect that setup and earlier interface revisions; the clean installation uses generic defaults.
+
+The VRM avatar is animated by **ANIMATE**, a separate application. Mio provides the conversation interface; these images do not imply built-in avatar rendering or automatic avatar switching. Thank you to the ANIMATE team: [visit ANIMATE](https://getanimate.app/#top).
+
+### Conversation beside the avatar
+
+![Customized Mio chat with Geminy and an ANIMATE avatar](images/examples/mio-animate-companion-chat.png)
+
+### Companion resting above the chat
+
+![ANIMATE avatar resting above the Mio desktop chat](images/examples/mio-animate-companion-resting.png)
+
+### Earlier examples
+
+![Mio avatar and chat window](images/examples/mio-chat-and-avatar.png)
+
+![Mio desktop shortcut](images/examples/mio-desktop-shortcut.png)
+
+## Current status and limits
+
+Mio remains a development/test project. The latest local builds passed native package verification, native extraction, file/hash and configuration checks, plus the retained unit tests. A complete fresh dependency installation and live microphone/camera/API conversation have not been validated for this clean build. See [release verification](RELEASE-20261030.md) and [source-port details](SOURCE-UPDATE-20261030.md).
+
+External services, models, devices and provider accounts need setup. Support for a specific API feature depends on its model/account. The latest source and manuals are published here; the maintainer has confirmed the matching installer upload to Drive. Online API keys saved after installation should currently be removed through their settings page before uninstalling; file removal does not automatically clear Credential Manager entries.
+
+## Support development
+
+Mio is under development, coded by GPT with Yaban as software designer.
+
+- [Support Mio on Patreon](https://www.patreon.com/cw/Yaban_racing)
+- [Leave a tip on Ko-fi](https://ko-fi.com/yabanjin)
+
 ## Windows downloads
 
 **[Download the FR and EN Windows installers from Google Drive](https://drive.google.com/drive/folders/1T_UG55MI6s6P-QK2etLTrvDN8R605m0e?usp=sharing)**
@@ -122,36 +155,3 @@ The current packaged stack targets **64-bit Windows and NVIDIA CUDA**. For fully
 | Two GPUs with 12 GB VRAM each | Mio services on one card; local LLM on the other. |
 
 LLM size, quantization, context and active services determine actual memory needs. Two 12 GB cards do not automatically act as one 24 GB card. Initial settings assign services to GPU 0 and the LLM to GPU 1; follow the manual to change this for a single card. Full simultaneous single-GPU operation still needs validation. There is no ready-to-use CPU or AMD configuration in these installers.
-
-## Screenshots
-
-The following are user-provided examples from a customized prototype installation. Names, French text, avatar poses and some diagnostic display reflect that setup and earlier interface revisions; the clean installation uses generic defaults.
-
-The VRM avatar is animated by **ANIMATE**, a separate application. Mio provides the conversation interface; these images do not imply built-in avatar rendering or automatic avatar switching. Thank you to the ANIMATE team: [visit ANIMATE](https://getanimate.app/#top).
-
-### Conversation beside the avatar
-
-![Customized Mio chat with Geminy and an ANIMATE avatar](images/examples/mio-animate-companion-chat.png)
-
-### Companion resting above the chat
-
-![ANIMATE avatar resting above the Mio desktop chat](images/examples/mio-animate-companion-resting.png)
-
-### Earlier examples
-
-![Mio avatar and chat window](images/examples/mio-chat-and-avatar.png)
-
-![Mio desktop shortcut](images/examples/mio-desktop-shortcut.png)
-
-## Current status and limits
-
-Mio remains a development/test project. The latest local builds passed native package verification, native extraction, file/hash and configuration checks, plus the retained unit tests. A complete fresh dependency installation and live microphone/camera/API conversation have not been validated for this clean build. See [release verification](RELEASE-20261030.md) and [source-port details](SOURCE-UPDATE-20261030.md).
-
-External services, models, devices and provider accounts need setup. Support for a specific API feature depends on its model/account. The latest source and manuals are published here; the maintainer has confirmed the matching installer upload to Drive. Online API keys saved after installation should currently be removed through their settings page before uninstalling; file removal does not automatically clear Credential Manager entries.
-
-## Support development
-
-Mio is under development, coded by GPT with Yaban as software designer.
-
-- [Support Mio on Patreon](https://www.patreon.com/cw/Yaban_racing)
-- [Leave a tip on Ko-fi](https://ko-fi.com/yabanjin)
