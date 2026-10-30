@@ -98,5 +98,6 @@ Open Uninstall Mio from Start, verify its folder and confirm. Local files/data
 are removed; external applications remain. Close running components first.
 If you saved an API key, remove it in its API settings page before uninstalling.
 
-These are local EXEs; Google Drive is not updated automatically. Compare their
-SHA-256 values with SHA256SUMS.txt to identify this release.
+The maintainer confirmed uploading both latest EXEs to the Google Drive folder
+linked in the GitHub README. Compare their SHA-256 values with SHA256SUMS.txt
+to identify this release; a full hosted-file download comparison remains pending.

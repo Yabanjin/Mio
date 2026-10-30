@@ -103,5 +103,6 @@ Les fichiers et données de cette installation sont supprimés, les programmes e
 restent en place. Une application encore ouverte doit être fermée avant suppression.
 Si une clé API a été enregistrée, la retirer depuis sa page API avant désinstallation.
 
-Les EXE de ce dossier sont locaux. Le lien Google Drive n'est pas automatiquement
-mis à jour : comparer les SHA-256 avec SHA256SUMS.txt pour identifier cette version.
+L'auteur confirme avoir mis les deux derniers EXE sur le dossier Google Drive
+lié dans le README GitHub. Comparer les SHA-256 avec SHA256SUMS.txt pour identifier
+cette version ; un téléchargement de contrôle complet reste à effectuer.

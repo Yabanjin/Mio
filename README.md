@@ -25,7 +25,7 @@ The installers and guides are grouped locally in **[00 - INSTALLATEURS MIO](00%2
 
 FR/EN refers to command recognition; both editions currently use the English configuration interface. Each EXE is about **3.47 GB** and includes its application archive: no separate `payload` folder is required. EXEs and model weights are excluded from Git; this repository contains the source and manuals.
 
-**The local installers were rebuilt on 30 October 2026. The Drive copies have not been updated by that build.** Compare downloaded files against the published checksums before assuming they contain the newest source. See the [build notes](RELEASE-20261030.md) for checks and remaining validation.
+**The FR/EN installers were rebuilt on 30 October 2026, and the maintainer has confirmed uploading both latest EXEs to the Google Drive folder.** Use the published checksums to identify the downloaded version. See the [build notes](RELEASE-20261030.md) for checks and remaining validation.
 
 ## Features
 
@@ -147,7 +147,7 @@ The VRM avatar is animated by **ANIMATE**, a separate application. Mio provides 
 
 Mio remains a development/test project. The latest local builds passed native package verification, native extraction, file/hash and configuration checks, plus the retained unit tests. A complete fresh dependency installation and live microphone/camera/API conversation have not been validated for this clean build. See [release verification](RELEASE-20261030.md) and [source-port details](SOURCE-UPDATE-20261030.md).
 
-External services, models, devices and provider accounts need setup. Support for a specific API feature depends on its model/account. Source availability does not mean that the current Google Drive binaries have already been refreshed. Online API keys saved after installation should currently be removed through their settings page before uninstalling; file removal does not automatically clear Credential Manager entries.
+External services, models, devices and provider accounts need setup. Support for a specific API feature depends on its model/account. The latest source and manuals are published here; the maintainer has confirmed the matching installer upload to Drive. Online API keys saved after installation should currently be removed through their settings page before uninstalling; file removal does not automatically clear Credential Manager entries.
 
 ## Support development
 
