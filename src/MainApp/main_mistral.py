@@ -1,4 +1,5 @@
 import io
+from math import gcd
 import json
 import logging
 import os
@@ -45,6 +46,10 @@ from speaker_identity import SPEAKER_RECOGNIZER
 from typed_chat import author_identity
 from progressive_stt import ProgressiveTranscriber
 from cancellable_work import CancellableWork, TurnCancelled
+from pathlib import Path
+from online_routing import ProviderRouting
+from module_settings import load_modules, NoSpeakerRecognition
+import online_services
 import chat_events
 
 logging.basicConfig(
@@ -55,7 +60,7 @@ chat_events.install_error_handler()
 for console_handler in logging.getLogger().handlers:
     if isinstance(console_handler, logging.StreamHandler) and not isinstance(console_handler, logging.FileHandler):
         console_handler.terminator = "\n\n\n"
-VOSK_DIAGNOSTIC_LOG = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "logs", "vosk-live.log")
+VOSK_DIAGNOSTIC_LOG = str(Path(__file__).resolve().parents[2] / "data/logs/vosk-live.log")
 os.makedirs(os.path.dirname(VOSK_DIAGNOSTIC_LOG), exist_ok=True)
 vosk_diagnostic_logger = logging.getLogger("vosk.diagnostic")
 vosk_diagnostic_logger.setLevel(logging.INFO)
@@ -82,6 +87,8 @@ with open(os.path.join(os.path.dirname(__file__), 'config', 'prononciation.json'
     PRONUNCIATION = json.load(settings_file)
 from component_connections import load_connections
 COMPONENTS = load_connections()
+
+# Endpoints
 URL_STT = COMPONENTS['transcription']['url']
 URL_LLM = COMPONENTS['llm']['url']
 URL_PIPER_TTS = COMPONENTS['french_voice']['url']
@@ -116,6 +123,7 @@ VOSK_FRAMES_PER_WRITE = 5  # 5 blocks of 20 ms = 100 ms for Vosk.
 
 llm_generating = False
 conversation_pending = threading.Event()
+whisper_pending_phrase = None  # (generation, trace_id), held through reply generation.
 tts_generating = False
 
 # ============================================================
@@ -130,31 +138,24 @@ VOICE_CHANGER_OUTPUT_PREROLL_SECONDS = 0.15
 # Agent DVR owns the camera; this client only reads its local image. Only a
 # recognized face authorizes sending an audio segment to Whisper Turbo.
 MAINAPP_DIR = os.path.dirname(__file__)
+MODULES = load_modules(Path(MAINAPP_DIR).resolve().parents[1])
+if not MODULES['speaker_recognition']:
+    SPEAKER_RECOGNIZER = NoSpeakerRecognition()
 TRIGGER_DIR = os.path.join(MAINAPP_DIR, "trigger")
 AUTO_RESPONSE_DIR = os.path.join(MAINAPP_DIR, "reponse_auto")
 
 
 def resolve_microphone_device():
-    """Select MicroBoost's VB Cable output without relying on a changing index."""
+    """Select the configured input or the Windows default, as in the settings test."""
+    from audio_devices import resolve_input_device
     config_path = os.path.join(MAINAPP_DIR, "config", "peripheriques_audio.json")
     with open(config_path, encoding="utf-8") as config_file:
         config = json.load(config_file)
-    prefix = config["microphone_name_prefix"]
-    hostapi_name = config["microphone_hostapi"]
-    matches = [
-        index for index, device in enumerate(sd.query_devices())
-        if device["max_input_channels"] > 0
-        and device["name"].startswith(prefix)
-        and sd.query_hostapis(device["hostapi"])["name"] == hostapi_name
-    ]
-    if len(matches) != 1:
-        raise RuntimeError(
-            f"MicroBoost input missing or ambiguous: {prefix!r} ({hostapi_name}), "
-            f"{len(matches)} correspondance(s)"
-        )
+    index = resolve_input_device(config, sd)
+    device = sd.query_devices(index)
     logging.info("Mio microphone input: %s (index %s, %s).",
-                 sd.query_devices(matches[0])["name"], matches[0], hostapi_name)
-    return matches[0]
+                 device['name'], index, sd.query_hostapis(device['hostapi'])['name'])
+    return index
 
 
 def load_json_config(path, description):
@@ -175,6 +176,7 @@ def load_auto_responses():
         "stop_femme": os.path.join(AUTO_RESPONSE_DIR, "annulation_mode", "phrases.json"),
         "stop": os.path.join(AUTO_RESPONSE_DIR, "stop", "reponse.json"),
         "pause": os.path.join(AUTO_RESPONSE_DIR, "pause", "reponse.json"),
+        "provider_switch": os.path.join(AUTO_RESPONSE_DIR, "provider_switch", "phrases.json"),
     }
     responses = {}
     for key, path in response_files.items():
@@ -201,11 +203,8 @@ if not 0 <= WHISPER_EN_MIN_TOKEN_CONFIDENCE <= 1:
 if not 0 <= WHISPER_JA_MIN_TOKEN_CONFIDENCE <= 1:
     raise ValueError("Invalid Japanese confidence threshold")
 if UNKNOWN_FACE_CONFIRM_SECONDS <= 0 or FACE_GRACE_SECONDS <= 0 or VOICE_IDLE_SECONDS <= 0 or not 0 <= WHISPER_MIN_TOKEN_CONFIDENCE <= 1:
-    raise ValueError("Invalid Whisper timings or threshold in fonctionnement.json")
-FACE_PRESENCE = FacePresence(interval_seconds=float(RUNTIME_CONFIG["face_poll_seconds"]),
-                             agent_snapshot_url=COMPONENTS['camera']['snapshot_url'],
-                             face_recognition_url=COMPONENTS['camera']['recognition_url'],
-                             min_confidence=float(CONNECTION['face_min_confidence']))
+    raise ValueError("Délais ou seuil Whisper invalides dans fonctionnement.json")
+FACE_PRESENCE = FacePresence(agent_snapshot_url=COMPONENTS['camera']['snapshot_url'], face_recognition_url=COMPONENTS['camera']['recognition_url'], interval_seconds=float(RUNTIME_CONFIG["face_poll_seconds"]), min_confidence=float(CONNECTION["face_min_confidence"]))
 PROMPT_CONDITIONS = load_json_config(
     os.path.join(MAINAPP_DIR, "config", "conditions_prompt.json"),
     "prompt selection conditions",
@@ -247,26 +246,36 @@ def load_trigger_phrases():
 
 
 TRIGGER_PHRASES = load_trigger_phrases()
+PROJECT_ROOT = Path(MAINAPP_DIR).resolve().parents[1]
+PROVIDERS = ProviderRouting(PROJECT_ROOT, TRIGGER_PHRASES['child_exit'],
+                            [p for group, phrases in TRIGGER_PHRASES.items()
+                             if group != 'child_exit' for p in phrases])
+ONLINE_CONFIGS = {}
 chat_events.emit("commands", groups=[
-    dict(label="Wake", phrases=TRIGGER_PHRASES["wake"],
-         action="Wake Mio if the face is authorized."),
+    dict(label="Réveil", phrases=TRIGGER_PHRASES["wake"],
+         action="Réveille Mio si le visage est autorisé."),
     dict(label="Stop", phrases=TRIGGER_PHRASES["stop"],
-         action="Cancel the exchange and stop the reply; Mio stays awake."),
-    dict(label="Sleep", phrases=TRIGGER_PHRASES["pause"],
-         action="Cancel the exchange, say goodbye, then sleep; ignored during speech."),
-    dict(label="Stop flirting", phrases=TRIGGER_PHRASES["flirt"],
-         action=f"Interrupt and block Adult mode for {FEMALE_PROMPT_BLOCK_SECONDS / 60:g} minutes."),
-    dict(label="Exit Child mode", phrases=TRIGGER_PHRASES["child_exit"],
-         action="Stop the reply and clear the persistent mode; a recognized child still takes priority."),
+         action="Annule l’échange et coupe la réponse ; Mio reste éveillée."),
+    dict(label="Switch model", phrases=[p for p, provider in PROVIDERS.commands.items()
+                                        if provider != 'local' or p in PROVIDERS.switch_commands],
+         action="Switch while awake and announce the model. Wake Mio first when asleep."),
+    dict(label="Sommeil", phrases=TRIGGER_PHRASES["pause"],
+         action="Put the session to sleep when not speaking; ignored during speech."),
+    dict(label="Fin du flirt", phrases=TRIGGER_PHRASES["flirt"],
+         action=f"Interrupts and blocks Adult mode for {FEMALE_PROMPT_BLOCK_SECONDS / 60:g} minutes."),
+    dict(label="Fin du mode Enfant", phrases=TRIGGER_PHRASES["child_exit"],
+         action="Coupe la réponse et retire la permanence ; enfant reconnu toujours prioritaire."),
 ])
 
 # ============================================================
 # 3) MIO LANGUAGES AND BEHAVIOR
 # Input accepts French, Japanese, and English; English is the default reply language.
 # ============================================================
-# Clean text only after transcription. Active commands are configured in
-# MainApp\trigger and loaded at startup.
+# Nettoyage du texte après transcription seulement ; les commandes actives sont
+# configurées dans MainApp\trigger et chargées au démarrage.
 chat_histories = {mode: deque(maxlen=8) for mode in ('Normal', 'Adult', 'Child')}
+online_histories = {provider: {mode: deque(maxlen=8) for mode in chat_histories}
+                    for provider in ('gpt', 'gemini')}
 stop_requested = False
 mio_paused = False
 conversation_active = False
@@ -302,6 +311,8 @@ active_reply_mode = None
 active_reply_generation = None
 LLM_WORK = CancellableWork("Mio-LLM-HTTP")
 TTS_WORK = CancellableWork("Mio-TTS-HTTP")
+ONLINE_LLM_WORK = CancellableWork('Mio-Online-LLM')
+ONLINE_TTS_WORK = CancellableWork('Mio-Online-TTS')
 RVC_WORK = CancellableWork("Mio-RVC-HTTP", capacity=1)
 _rvc_config = None
 _rvc_config_at = 0.0
@@ -311,7 +322,7 @@ last_sent_wav_at = 0.0
 playback_recovery_start = None
 user_phrase_active = False
 pause_reply_generation = None
-READY_FILE = os.path.join(MAINAPP_DIR, "..", "..", "data", "logs", "mainapp-ready.json")
+READY_FILE = str(PROJECT_ROOT / "data/logs/mainapp-ready.json")
 
 
 def enqueue_face_wake_response(mode="Normal"):
@@ -436,7 +447,7 @@ def recognition_sentence(names, template):
 
 def speaker_context_instruction(speaker_identity):
     identity = speaker_identity or {}
-    if identity.get('source') == 'text':
+    if identity.get('source') == 'whisper':
         names = recognition_names(identity.get('names', []))
         return recognition_sentence(names, RECOGNITION_CONTEXT.get('text_template', "{names} is writing to you in the chat."))
     names = recognition_names(identity.get("names", []), voice=True)
@@ -765,7 +776,8 @@ def split_tts_by_language(text: str, default_language: str):
     return resolved
 
 
-# Piper UPMC/Jessica handles French; native MeloTTS handles Japanese and English.
+# Piper UPMC/Jessica traite le français ; MeloTTS natif traite le japonais.
+# MeloTTS natif sert au japonais et à l'anglais.
 
 def clear_tts_queue():
     while not tts_queue.empty():
@@ -797,8 +809,11 @@ def publish_chat_state():
         or ("Adult" in visible_face_roles(names) and woman_since is not None
             and now - woman_since >= float(PROMPT_CONDITIONS["woman_face_confirm_seconds"]))
     ))
+    if PROVIDERS.begin_turn().provider != 'local':
+        child = woman = False
     chat_events.state(conversation_active and not mio_paused, interrupt_generation,
                       ready=runtime_ready.is_set(),
+                      provider=PROVIDERS.status(),
                       child_mode=child, family_mode="Child" if child else "Adult" if woman else "Normal")
 
 
@@ -806,7 +821,7 @@ def chat_names(identity=None):
     # Display all detected names; this list is never sent back to speaker identification.
     detected = list((identity or {}).get('names', []))
     detected.extend(FACE_PRESENCE.snapshot().names)
-    aliases = {str(key).casefold(): value for key, value in RECOGNITION_CONTEXT["aliases"].items()}
+    aliases = {}
     names = []
     for name in detected:
         name = str(name).strip()
@@ -892,7 +907,7 @@ def _read_vosk_events(process):
                 if vosk_trigger_kind == "stop":
                     chat_events.emit("command", key='stop-' + str(time.monotonic_ns()),
                                      stage="STOP DETECTED", names=["Vosk"],
-                                     text=f'Recognized command: « {vosk_trigger_text} ».')
+                                     text=f'Commande reconnue : « {vosk_trigger_text} ».')
     except Exception:
         logging.exception("Vosk channel read error.")
     finally:
@@ -914,6 +929,9 @@ def start_vosk_trigger():
         vosk_process = subprocess.Popen(
             [VOSK_PYTHON, "-u", VOSK_PIPE_SCRIPT],
             cwd=VOSK_DIR,
+            env={**os.environ, 'MIO_PROVIDER_COMMANDS': json.dumps([
+                p for p, provider in PROVIDERS.commands.items()
+                if provider != 'local' or p in PROVIDERS.switch_commands])},
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=None,
@@ -977,11 +995,18 @@ def turn_is_current(generation):
     return (
         generation == interrupt_generation and conversation_active
         and not mio_paused and not stop_requested
-        and (face_bad_since is None or time.monotonic() - face_bad_since < FACE_GRACE_SECONDS)
+        and (not MODULES['face_recognition'] or face_bad_since is None
+             or time.monotonic() - face_bad_since < FACE_GRACE_SECONDS)
     )
 
 
+def face_access_available(state=None):
+    return not MODULES['face_recognition'] or (state or FACE_PRESENCE.snapshot()).has_known_person
+
+
 def cancel_current_turn(*, preserve_memory=False):
+    global whisper_pending_phrase
+    whisper_pending_phrase = None
     global playback_recovery_start
     playback_recovery_start = None
     global interrupt_generation, capture_resume_after, pause_reply_generation
@@ -991,6 +1016,7 @@ def cancel_current_turn(*, preserve_memory=False):
     if progressive_stt is not None:
         progressive_stt.cancel(interrupt_generation)
     interrupt_generation += 1
+    PROVIDERS.stop()
     user_phrase_active = False
     female_turn_generation = None
     active_reply_mode = active_reply_generation = None
@@ -1011,7 +1037,7 @@ def cancel_current_turn(*, preserve_memory=False):
     if microphone is not None:
         microphone.clear()
     publish_chat_state()
-    if not shutdown_event.is_set() and not preserve_memory:
+    if MODULES['vector_memory'] and not shutdown_event.is_set() and not preserve_memory:
         try:
             cancel_memory(cancelled_generation)
         except Exception:
@@ -1031,6 +1057,9 @@ def enter_sleep(reason, paused=False):
 
 def pause_mio():
     global stop_requested, voice_wait_since, pause_reply_generation
+    if not MODULES['speech_output']:
+        enter_sleep('Sleep requested with speech output disabled', paused=True)
+        return
     with state_lock:
         if not conversation_active or mio_paused:
             return
@@ -1050,7 +1079,7 @@ def wake_session():
         if not runtime_ready.is_set():
             return False
         state = FACE_PRESENCE.snapshot()
-        if not state.has_known_person:
+        if not face_access_available(state):
             logging.info("Wake refused: no known face without an unknown face in the current image.")
             return False
         if conversation_active and assistant_audio_active():
@@ -1059,6 +1088,7 @@ def wake_session():
         stop_requested = False
         mio_paused = False
         conversation_active = True
+        PROVIDERS.switch('local')
         publish_chat_state()
         face_bad_since = None
         last_trusted_face_names = state.names
@@ -1081,6 +1111,78 @@ def wake_session():
     return True
 
 
+def select_provider(provider):
+    """Change route only within an already awake, authorized conversation."""
+    global stop_requested, voice_wait_since
+    with state_lock:
+        if not conversation_active or mio_paused:
+            chat_events.emit('error', key='provider-sleep-' + uuid.uuid4().hex,
+                             text='Wake Mio first, then select GPT or Gemini.')
+            return
+        if not turn_is_current(interrupt_generation):
+            return
+        try:
+            config = online_services.configuration(PROJECT_ROOT, provider,
+                        speech_output=MODULES['speech_output']) if provider != 'local' else None
+        except (ValueError, OSError) as error:
+            chat_events.emit('error', key='provider-config-' + uuid.uuid4().hex, text=str(error))
+            return
+        cancel_current_turn(preserve_memory=True)
+        if config is not None:
+            ONLINE_CONFIGS[provider] = config
+        PROVIDERS.switch(provider)
+        stop_requested = False
+        voice_wait_since = time.monotonic()
+        publish_chat_state()
+        chat_events.emit('command', key='provider-' + uuid.uuid4().hex,
+                         stage='PROVIDER', names=['Mio'], text=PROVIDERS.status())
+        response = AUTO_RESPONSES['provider_switch'][provider]
+        if MODULES['speech_output']:
+            tts_queue.put((response['whisper'], response.get('language', 'Japanese'), interrupt_generation, True))
+        else:
+            chat_events.message('switch-' + uuid.uuid4().hex, response['whisper'],
+                                [{'local': 'Mio', 'gpt': 'GPT', 'gemini': 'Geminy'}[provider]],
+                                complete=True, mio=True)
+
+
+def typed_control(text):
+    """Process explicit typed controls immediately, even during generation."""
+    provider = PROVIDERS.command(text)
+    stop = is_stop_only_command(text)
+    pause = is_pause_request(text)
+    if provider is None and not stop and not pause:
+        return False
+    if not face_access_available():
+        chat_events.emit('error', key='control-face-' + uuid.uuid4().hex,
+                         text='A recognized face is required for this command.')
+        return True
+    if provider == 'local' and normalize_control_phrase(text) not in PROVIDERS.switch_commands:
+        handle_vosk_command('child_exit', text, source='whisper')
+    elif provider is not None:
+        select_provider(provider)
+    elif stop:
+        handle_vosk_command('child_exit', text, source='whisper')
+    else:
+        handle_vosk_command('child_exit', text, source='whisper')
+    return True
+
+
+def refresh_provider_flags():
+    """Disabling the active online provider immediately cancels its output."""
+    global stop_requested
+    with state_lock:
+        provider = PROVIDERS.begin_turn().provider
+        if provider == 'local':
+            return
+        path = PROJECT_ROOT / 'settings/online' / (provider + '.json')
+        config = json.loads(path.read_text(encoding='utf-8-sig'))
+        if config.get('enabled') is not True:
+            cancel_current_turn(preserve_memory=True)
+            PROVIDERS.switch('local')
+            stop_requested = not conversation_active or mio_paused
+            publish_chat_state()
+
+
 def request_vosk_interruption(recognized_text, enter_pause=False, reply_stop=False):
     global stop_requested, voice_wait_since
     if enter_pause:
@@ -1099,6 +1201,17 @@ def request_vosk_interruption(recognized_text, enter_pause=False, reply_stop=Fal
 def handle_vosk_command(kind, recognized_text, source="final"):
     global FEMALE_PROMPT_BLOCKED_UNTIL, child_mode_latched, child_latch_rearm_pending, child_absent_since
     with state_lock:
+        if kind == 'provider':
+            provider = PROVIDERS.command(recognized_text)
+            if provider is not None:
+                select_provider(provider)
+            return True
+        if kind == 'child_exit':
+            if conversation_active and not mio_paused:
+                select_provider('local')
+            else:
+                wake_session()
+            return True
         if kind == "child_exit":
             child_mode_latched = False
             child_latch_rearm_pending = True
@@ -1107,17 +1220,14 @@ def handle_vosk_command(kind, recognized_text, source="final"):
             publish_chat_state()
             chat_events.emit("command", key='child-exit-' + str(time.monotonic_ns()),
                              stage="EXIT CHILD MODE", names=["Whisper" if source == "whisper" else "Vosk"],
-                             text="Persistent mode cleared; a recognized child still takes priority.")
+                             text="Permanence retirée ; un enfant encore reconnu reste prioritaire.")
             logging.info("Child mode: persistence cleared by command, present child keeps priority.")
             return True
         if user_phrase_active and not is_speaking and kind not in {"stop", "pause"}:
             logging.info("Vosk command other than stop/sleep ignored during the utterance: %s.", recognized_text)
             return True
         if kind == "pause" and is_speaking:
-            logging.info("Sleep command ignored during playback: %s.", recognized_text)
-            return True
-        if kind == "wake":
-            wake_session()
+            logging.info("Commande de sommeil ignorée pendant la lecture : %s.", recognized_text)
             return True
         if mio_paused or not conversation_active:
             return True
@@ -1126,7 +1236,7 @@ def handle_vosk_command(kind, recognized_text, source="final"):
             FEMALE_PROMPT_BLOCKED_UNTIL = time.monotonic() + FEMALE_PROMPT_BLOCK_SECONDS
             response = AUTO_RESPONSES["stop_femme"]
             tts_queue.put((response["text"], response.get("language", "Japanese"), interrupt_generation))
-            logging.info("Adult mode blocked for %s minutes; next prompt is Normal unless Child takes priority.",
+            logging.info("Adult mode blocked for %s minutes; Normal resumes unless Child takes priority.",
                          FEMALE_PROMPT_BLOCK_SECONDS / 60)
             return True
         request_vosk_interruption(
@@ -1143,7 +1253,9 @@ def on_microphone_chunk(chunk, captured_at):
     with state_lock:
         # STT and LLM do not stop audio assembly. Actual synthesis/playback does.
         # A queued reply waits for an already-open user phrase to finish.
-        output_reserved = voice_pipeline_busy() or (not user_phrase_active and not tts_queue.empty())
+        output_reserved = (whisper_pending_phrase is not None or conversation_pending.is_set()
+                           or llm_generating or voice_pipeline_busy()
+                           or (not user_phrase_active and not tts_queue.empty()))
         if output_reserved or not turn_is_current(interrupt_generation):
             capture_resume_after = max(capture_resume_after, captured_at + float(RUNTIME_CONFIG["post_mio_guard_seconds"]))
             return None
@@ -1191,6 +1303,8 @@ def process_face_arrival(state, now):
                 face_role_last_seen.pop(role, None)
                 if role != "Child" or (not child_mode_latched and not child_latch_rearm_pending):
                     face_roles_announced.discard(role)
+    if PROVIDERS.begin_turn().provider != 'local':
+        return  # Family arrivals and their personalities belong to local Mio.
     if ((child_mode_latched or child_face_confirmed(state.names, now))
             and active_reply_generation == interrupt_generation
             and active_reply_mode in {"Normal", "Adult"} and assistant_audio_active()):
@@ -1240,7 +1354,7 @@ def conversation_watchdog():
     global face_bad_since, face_unknown_since, last_trusted_face_names, voice_wait_since
     while not shutdown_event.wait(0.05):
         with state_lock:
-            if not vosk_ready.is_set():
+            if MODULES['voice_input'] and not vosk_ready.is_set():
                 logging.error("Vosk unavailable: stopping MainApp, voice commands cannot be guaranteed.")
                 runtime_ready.clear()
                 enter_sleep("command detector unavailable")
@@ -1248,11 +1362,12 @@ def conversation_watchdog():
                 continue
             now = time.monotonic()
             state = FACE_PRESENCE.snapshot()
-            process_face_arrival(state, now)
+            if MODULES['face_recognition']:
+                process_face_arrival(state, now)
             if not conversation_active:
                 face_unknown_since = None
                 continue
-            if state.camera_ready and state.unknown_present:
+            if MODULES['face_recognition'] and state.camera_ready and state.unknown_present:
                 if face_unknown_since is None:
                     face_unknown_since = now
                 if now - face_unknown_since >= UNKNOWN_FACE_CONFIRM_SECONDS:
@@ -1261,7 +1376,10 @@ def conversation_watchdog():
                     continue
             else:
                 face_unknown_since = None
-            if state.has_known_person:
+            if not MODULES['face_recognition']:
+                face_bad_since = face_unknown_since = None
+                last_trusted_face_names = ()
+            elif state.has_known_person:
                 if face_bad_since is not None:
                     logging.info("Face recognized again: grace period cancelled.")
                 face_bad_since = None
@@ -1269,7 +1387,7 @@ def conversation_watchdog():
             else:
                 if face_bad_since is None:
                     face_bad_since = now
-                    logging.info("Face recognition lost/unknown: %.0f second grace period.",
+                    logging.info("Reconnaissance faciale perdue/inconnue : tolérance de %.0f secondes.",
                                  FACE_GRACE_SECONDS)
                 if now - face_bad_since >= FACE_GRACE_SECONDS:
                     enter_sleep("face recognition not restored after the grace period")
@@ -1325,7 +1443,7 @@ def convert_tts_audio_through_voice_changer(
         ))
         if input_gain > 1.0:
             source = source * input_gain
-            logging.info("RVC: TTS input gain x%.2f, peak %.6f -> %.6f; output level retained.",
+            logging.info("RVC : gain d'entrée TTS x%.2f, pic %.6f -> %.6f ; niveau de sortie conservé.",
                          input_gain, source_peak, source_peak * input_gain)
     leading_silence_samples = max(0, round(sample_rate * leading_silence_seconds))
     if leading_silence_samples:
@@ -1413,7 +1531,7 @@ def balance_playback_level(audio, sample_rate):
                          float(RUNTIME_CONFIG["tts_output_min_gain"]),
                          float(RUNTIME_CONFIG["tts_output_max_gain"])))
     gain = min(gain, 0.891 / peak)
-    logging.info("TTS output level: active RMS %.2f%% -> %.2f%%, gain x%.2f, final peak %.2f%%.",
+    logging.info("Niveau sortie TTS : RMS actif %.2f%% -> %.2f%%, gain x%.2f, pic final %.2f%%.",
                  level * 100, level * gain * 100, gain, peak * gain * 100)
     return audio * gain
 
@@ -1425,12 +1543,14 @@ def unpack_tts_item(item):
         fallback = item[3] if len(item) >= 4 else False
         timing = item[4] if len(item) >= 5 else None
         return text, language, generation, fallback, timing
-    return item, RESPONSE_LANGUAGE_GUARD.config.get("default_language", "English"), interrupt_generation, False, None
+    return item, "English", interrupt_generation, False, None
 
 
 def prepare_tts_item(item, current=None):
     """Synthesis and RVC in order; never owns the audio output."""
     global _rvc_config
+    if not MODULES['speech_output']:
+        return None
     text, tts_lang, generation, fallback, timing = unpack_tts_item(item)
     current = current or (lambda: turn_is_current(generation) and not shutdown_event.is_set())
     if not current():
@@ -1438,32 +1558,58 @@ def prepare_tts_item(item, current=None):
     cleaned = clean_text_for_tts(text)
     if not cleaned or (len(cleaned) < 2 and tts_lang != 'Japanese'):
         return None
-    if tts_lang.casefold() == 'french':
-        engine, url, payload = 'Piper Jessica + RVC', URL_PIPER_TTS, {'text': cleaned}
+    online = (timing or {}).get('online')
+    remote_speech = online is not None and online['config'].get('tts_source', 'local') == 'provider'
+    if remote_speech:
+        engine = online['provider'].upper() + ' API voice + RVC'
+    elif tts_lang.casefold() == 'french':
+        engine, url, payload = 'Piper Jessica + RVC', URL_PIPER_TTS, {'whisper': cleaned}
     else:
         lang = 'JP' if tts_lang.casefold() == 'japanese' else 'EN'
-        engine, url, payload = 'Melo ' + lang + ' + RVC', URL_MELO_TTS, {'text': cleaned, 'language': lang}
+        engine, url, payload = 'Melo ' + lang + ' + RVC', URL_MELO_TTS, {'whisper': cleaned, 'language': lang}
     synthesis_started = time.monotonic()
-    for attempt in range(2):
+    for attempt in range(1 if remote_speech else 2):
         try:
             def synthesize():
-                with http_session().post(url, json=payload, timeout=60) as response:
-                    response.raise_for_status()
-                    data, rate = sf.read(io.BytesIO(response.content), dtype='float32')
+                if remote_speech:
+                    audio = online_services.speech(online['provider'], online['config'],
+                                                   online_services.spoken_text(cleaned))
+                else:
+                    with http_session().post(url, json=payload, timeout=60) as response:
+                        response.raise_for_status()
+                        audio = response.content
+                data, rate = sf.read(io.BytesIO(audio), dtype='float32')
                 if not data.size or not np.isfinite(data).all() or rate <= 0 or float(np.max(np.abs(data))) <= 1e-8:
                     raise RuntimeError(engine + ' returned invalid or silent audio')
                 return data, rate
-            data, sr = TTS_WORK.run(synthesize, current)
+            worker = ONLINE_TTS_WORK if remote_speech else TTS_WORK
+            data, sr = worker.run(synthesize, current)
             break
         except TurnCancelled:
             raise
         except Exception:
-            if attempt:
+            if remote_speech or attempt:
                 raise
             logging.warning('%s unavailable; retrying once.', engine, exc_info=True)
             shutdown_event.wait(.2)
     synthesis_seconds = time.monotonic() - synthesis_started
-    if tts_lang.casefold() != 'french' and sr == 44100:
+    if not MODULES['voice_changer']:
+        if not current():
+            raise TurnCancelled()
+        data = balance_playback_level(data, sr)
+        if data.ndim == 1:
+            data = np.column_stack((data, data))
+        return (data, sr, playback_reference.prepare(data, sr), engine.replace(' + RVC', ''),
+                generation, fallback, timing, cleaned)
+    if remote_speech:
+        # The existing RVC setup expects mono 22050 Hz. Do not change its settings.
+        if data.ndim > 1:
+            data = np.mean(data, axis=1)
+        if sr != 22050:
+            divisor = gcd(sr, 22050)
+            data = resample_poly(data, 22050 // divisor, sr // divisor).astype(np.float32, copy=False)
+            sr = 22050
+    elif tts_lang.casefold() != 'french' and sr == 44100:
         data, sr = resample_poly(data, 1, 2).astype(np.float32, copy=False), 22050
     original_data, original_rate = data, sr
     wake_hai = tts_lang.casefold() == 'japanese' and cleaned.strip().rstrip('！!。') in {'はい','ハイ','ハーイ'}
@@ -1472,7 +1618,7 @@ def prepare_tts_item(item, current=None):
         if not current():
             raise TurnCancelled()
         if wake_hai and not attempt:
-            logging.info('Wake greeting: Melo generated %.2f s, maximum amplitude %.6f.',
+            logging.info('Réveil Hai : Melo a généré %.2f s, amplitude maximale %.6f.',
                          original_data.shape[0] / original_rate, float(np.max(np.abs(original_data))))
         try:
             data, sr = RVC_WORK.run(
@@ -1497,7 +1643,7 @@ def prepare_tts_item(item, current=None):
     if data.ndim == 1:
         data = np.column_stack((data, data))
     reference = playback_reference.prepare(data, sr)
-    logging.info('Voice latency: synthesis %.3f s; RVC/wait %.3f s; audio %.2f s.',
+    logging.info('Latence voix : synthèse %.3f s ; RVC/attente %.3f s ; audio %.2f s.',
                  synthesis_seconds, time.monotonic()-conversion_started, len(data)/sr)
     return data, sr, reference, engine, generation, fallback, timing, cleaned
 
@@ -1539,15 +1685,19 @@ def tts_prepare_worker():
                     slot_owned = False  # The playback worker or clear_tts_queue releases it.
         except TurnCancelled:
             pass
-        except Exception:
-            logging.exception('[TTS Error] Segment preparation')
+        except Exception as error:
+            provider_failure = isinstance(error, online_services.ProviderRequestError)
+            if provider_failure:
+                logging.error('API voice unavailable: %s Written reply retained. Try later or select Local Mio voice.', error)
+            else:
+                logging.exception('[TTS Erreur] Préparation du segment')
             with state_lock:
                 if generation is not None and turn_is_current(generation):
                     clear_tts_queue()
                     if pause_reply_generation == generation:
                         pause_reply_generation = None
                         enter_sleep('sleep response unavailable', paused=True)
-                    elif not fallback:
+                    elif not fallback and not provider_failure:
                         enqueue_japanese_error_response(generation)
         finally:
             with state_lock:
@@ -1600,14 +1750,14 @@ def tts_worker():
                 with state_lock:
                     if turn_is_current(generation):
                         chat_events.message('auto-' + str(time.monotonic_ns()), spoken_text,
-                                            ['Mio'], complete=True, mio=True)
+                                            [{'local': 'Mio', 'gpt': 'GPT', 'gemini': 'Geminy'}[PROVIDERS.begin_turn().provider]], complete=True, mio=True)
             if not output_latency_logged:
                 logging.info('Actual speaker stream latency: %.1f ms; WebRTC estimates acoustic delay.', stream.latency*1000)
                 output_latency_logged = True
             logging.info("Audio playback %s has started; Vosk keeps listening.", engine)
             if timing is not None and not timing.get('spoken'):
                 timing['spoken'] = True
-                logging.info('Turn latency %s: Turbo result -> first voice %.3f s; detected end -> voice %.3f s.',
+                logging.info('Latence tour %s : résultat Turbo -> première voix %.3f s ; fin détectée -> voix %.3f s.',
                              timing['id'], time.monotonic()-timing['finalized_at'],
                              time.monotonic()-timing['finished_at'])
             while not shutdown_event.is_set():
@@ -1620,11 +1770,11 @@ def tts_worker():
                         if (turn_is_current(generation) and tts_queue.empty()
                                 and prepared_tts.empty() and not tts_generating and microphone is not None):
                             ended_at = time.monotonic()
-                            playback_recovery_start = ended_at-float(RUNTIME_CONFIG['mio_tail_preroll_seconds'])
-                            microphone.recover_playback_tail(playback_recovery_start, ended_at, generation)
+                            # Never reclassify microphone audio captured during Mio
+                            # playback as eligible Whisper input, even after AEC.
+                            playback_recovery_start = None
                             capture_resume_after = ended_at+float(RUNTIME_CONFIG['post_mio_guard_seconds'])
-                            logging.info('Mio finished: %.2f s of cleaned microphone audio available in the pre-buffer.',
-                                         float(RUNTIME_CONFIG['mio_tail_preroll_seconds']))
+                            logging.info('Fin de Mio : audio pendant lecture exclu de Whisper ; reprise après délai de garde.')
                     break
                 shutdown_event.wait(.01)
         except Exception:
@@ -1650,10 +1800,12 @@ def tts_worker():
 def record_audio():
     """Build one complete utterance from the single, continuously open input."""
     global capture_resume_after, last_sent_wav_at, user_phrase_active, voice_wait_since
+    global whisper_pending_phrase
     while not shutdown_event.is_set():
         with state_lock:
             generation = interrupt_generation
-            active = voice_pipeline_busy() or not tts_queue.empty()
+            active = (whisper_pending_phrase is not None or conversation_pending.is_set()
+                      or llm_generating or voice_pipeline_busy() or not tts_queue.empty())
             can_capture = (runtime_ready.is_set() and turn_is_current(generation) and not active
                            and microphone.ready.is_set() and time.monotonic() >= capture_resume_after)
         if can_capture:
@@ -1665,11 +1817,9 @@ def record_audio():
     guard_end = capture_resume_after
     history_floor = max(
         0.0,
-        guard_end - float(RUNTIME_CONFIG["post_mio_guard_seconds"]),
+        guard_end,
         last_sent_wav_at + 1e-6,
     )
-    if playback_recovery_start is not None:
-        history_floor = max(last_sent_wav_at + 1e-6, min(history_floor, playback_recovery_start))
     frame_seconds = VOSK_FRAME_SAMPLES / SAMPLE_RATE
     audio_chunks = []
     stream = None
@@ -1708,7 +1858,7 @@ def record_audio():
             vad_stats_max = max(vad_stats_max, vad_probability)
             vad_stats_above += int(vad_probability >= vad_threshold)
             if time.monotonic() - vad_stats_started >= 5.0:
-                logging.info("Silero diagnostics: max score %.3f; %s/%s blocks above onset %.2f; utterance open=%s.",
+                logging.info("Diagnostic Silero : score max %.3f ; %s/%s blocs au-dessus du début %.2f ; phrase ouverte=%s.",
                              vad_stats_max, vad_stats_above, vad_stats_count, vad_threshold, bool(audio_chunks))
                 vad_stats_started = time.monotonic()
                 vad_stats_count = vad_stats_above = 0
@@ -1727,7 +1877,7 @@ def record_audio():
                     stream = progressive_stt.begin(generation)
                     for previous_chunk in preceding:
                         stream.append(previous_chunk)
-                    logging.info("Speech start: %.2f s recovered from the FIFO pre-buffer.",
+                    logging.info("Début de parole : %.2f s récupérées dans le pré-buffer FIFO.",
                                  len(preceding) * frame_seconds)
                 audio_chunks[:] = [chunk]
                 stream.append(chunk)
@@ -1740,14 +1890,17 @@ def record_audio():
                 stream.append(chunk)
                 silent_chunks += 1
                 if silent_chunks >= silence_limit:
-                    logging.info("End of utterance detected: %.2f s without voice according to Silero VAD; sending to Whisper Turbo.",
+                    logging.info("Fin de phrase détectée : %.2f s sans voix selon Silero VAD ; envoi à Whisper Turbo.",
                                  silent_chunks * frame_seconds)
                     break
         if not turn_is_current(generation) or voice_pipeline_busy() or not audio_chunks:
             return None
         with state_lock:
+            if not turn_is_current(generation) or voice_pipeline_busy():
+                return None
             capture_resume_after = max(capture_resume_after, captured_at)
             last_sent_wav_at = captured_at
+            whisper_pending_phrase = (generation, stream.trace_id)
         complete = True
         return stream, generation
     except VoiceActivityError:
@@ -1789,12 +1942,15 @@ def publish_provisional(text, generation):
 
 
 def publish_chat_transcription(text, generation, phrase_id, identity, complete):
+    global whisper_pending_phrase
     with state_lock:
         if not turn_is_current(generation):
             return
         if identity.get('mio_only'):
             chat_events.emit('remove', key='user-' + phrase_id)
         elif complete == 'error':
+            if whisper_pending_phrase == (generation, phrase_id):
+                whisper_pending_phrase = None
             chat_events.emit('error', key='user-' + phrase_id, text=text,
                              names=chat_names(identity), mio=False)
         elif text:
@@ -1815,15 +1971,41 @@ def consume_transcribed_control(result):
                'en': WHISPER_EN_MIN_TOKEN_CONFIDENCE}.get(language_key, WHISPER_MIN_TOKEN_CONFIDENCE)
     if not confidence >= minimum:
         return False
-    if normalize_control_phrase(text) not in {normalize_control_phrase(p) for p in TRIGGER_PHRASES['child_exit']}:
+    kind = None
+    if normalize_control_phrase(text) in {normalize_control_phrase(p) for p in TRIGGER_PHRASES['child_exit']}:
+        kind = 'child_exit'
+    elif (PROVIDERS.command(text) in ('gpt', 'gemini')
+          or normalize_control_phrase(text) in PROVIDERS.switch_commands):
+        kind = 'provider'
+    elif PROVIDERS.command(text) == 'local' and PROVIDERS.begin_turn().provider != 'local':
+        kind = 'child_exit'
+    if kind is None:
         return False
     with state_lock:
         if not turn_is_current(generation):
             return False
         publish_chat_transcription(text, generation, identity['_timing']['id'], identity, True)
-        handle_vosk_command('child_exit', text, source='whisper')
-    logging.info('End Child mode command recovered from validated Whisper text.')
+        handle_vosk_command(kind, text, source='whisper')
+    logging.info('Validated Whisper control applied: %s.', kind)
     return True
+
+
+def consume_transcribed_result(result):
+    """Controls bypass backlog; rejected online overflow remains visible in chat."""
+    if consume_transcribed_control(result):
+        return True
+    text, confidence, language, identity, generation = result
+    with state_lock:
+        if not turn_is_current(generation):
+            return True
+        if (PROVIDERS.begin_turn().provider != 'local' and progressive_stt is not None
+                and progressive_stt.results.full()):
+            publish_chat_transcription(
+                text + '\nToo many pending messages. This message was not queued. Wait or say Stop, then repeat.',
+                generation, identity['_timing']['id'], identity, 'error')
+            logging.warning('Online transcription queue full; message displayed but not queued.')
+            return True
+    return False
 
 
 def transcription_pending():
@@ -1913,7 +2095,17 @@ def transcribe_audio(audio_data, generation):
 # ============================================================
 # 8) LM STUDIO CONVERSATION AND TTS OUTPUT
 # ============================================================
-def request_llm_text(messages, generation, on_text=None):
+def request_llm_text(messages, generation, on_text=None, online=None, sources=None):
+    if online:
+        instruction = '\n\n'.join(m['content'] for m in messages if m['role'] == 'system')
+        conversation = [m for m in messages if m['role'] != 'system']
+        text, citations = ONLINE_LLM_WORK.run(
+            lambda: online_services.reply(online['provider'], online['config'], instruction, conversation),
+            lambda: turn_is_current(generation) and not shutdown_event.is_set())
+        if sources is not None:
+            sources[:] = citations
+        # Complete online reply is validated before speech. No speculative paid TTS.
+        return text
     def receive():
         parts = []
         started = time.monotonic()
@@ -1951,7 +2143,7 @@ def request_llm_text(messages, generation, on_text=None):
                 try:
                     choice = json.loads(value)["choices"][0]
                     if choice.get('finish_reason') == 'length':
-                        logging.warning('LLM response reached the %s token limit; response may be incomplete.',
+                        logging.warning('Réponse LLM à la limite de %s tokens ; réponse potentiellement incomplète.',
                                         conversation_options()['max_tokens'])
                     content = choice.get("delta", {}).get("content", "") or ""
                     if content and first_text_at is None:
@@ -1971,14 +2163,21 @@ def ask_llm(user_text, request_generation, speaker_identity=None, detected_langu
     with state_lock:
         if not turn_is_current(request_generation):
             return
+        provider = PROVIDERS.begin_turn().provider
+        online = ({'provider': provider, 'config': dict(ONLINE_CONFIGS[provider])}
+                  if provider != 'local' else None)
     now = time.monotonic()
     timing = (speaker_identity or {}).get('_timing') or {'id':str(request_generation), 'finished_at':now, 'finalized_at':now}
-    logging.info('Turn latency %s: Turbo result -> conversation start %.3f s.',
+    timing = dict(timing)
+    if online:
+        timing['online'] = online
+    sources = []
+    logging.info('Latence tour %s : résultat Turbo -> début conversation %.3f s.',
                  timing['id'], now-timing['finalized_at'])
     detected_language = detected_language.split("-", maxsplit=1)[0].lower()
     reply_language = requested_reply_language(user_text) or {
         "fr": "French", "en": "English", "ja": "Japanese"
-    }.get(detected_language, RESPONSE_LANGUAGE_GUARD.config.get("default_language", "English"))
+    }.get(detected_language, "English")
     language_labels = {
         "French": "French",
         "Japanese": "Japanese",
@@ -1986,14 +2185,14 @@ def ask_llm(user_text, request_generation, speaker_identity=None, detected_langu
     }
     language_label = language_labels.get(reply_language, "English")
     visible_names = last_trusted_face_names
-    if not visible_names or not turn_is_current(request_generation):
+    if (MODULES['face_recognition'] and not visible_names) or not turn_is_current(request_generation):
         logging.info("LLM call cancelled: no registered face recognized at send time.")
         return
     with state_lock:
         if not turn_is_current(request_generation):
             return
-        prompt_mode = select_prompt_mode(visible_names, speaker_identity)
-        chat_history = chat_histories[prompt_mode]
+        prompt_mode = 'Normal' if online else select_prompt_mode(visible_names, speaker_identity)
+        chat_history = (online_histories[provider][prompt_mode] if online else chat_histories[prompt_mode])
         previous_history = []
         for entry in chat_history:
             clean_entry = dict(entry)
@@ -2010,29 +2209,37 @@ def ask_llm(user_text, request_generation, speaker_identity=None, detected_langu
     if prompt_mode == "Child":
         reply_language = RESPONSE_LANGUAGE_GUARD.config.get("child_language", "English")
     elif prompt_mode == "Adult" and reply_language == "Japanese":
-        reply_language = RESPONSE_LANGUAGE_GUARD.config.get("default_language", "English")
+        reply_language = "English"
     language_label = language_labels.get(reply_language, "English")
     # Common and mode files carry the durable rules once; only the turn varies here.
     turn_instruction = RESPONSE_LANGUAGE_GUARD.config["turn_instruction"].format(language=language_label)
     logging.info("Prompt selected for this turn: %s.", prompt_mode)
     try:
-        relevant_memories = LLM_WORK.run(lambda: recall(user_text, prompt_mode, previous_history),
-                                        lambda: turn_is_current(request_generation))
+        relevant_memories = [] if online or not MODULES['vector_memory'] else LLM_WORK.run(
+            lambda: recall(user_text, prompt_mode, previous_history),
+            lambda: turn_is_current(request_generation))
     except TurnCancelled:
         if chat_history and chat_history[-1].get("role") == "user":
             chat_history.pop()
         llm_generating = False
         return
     if relevant_memories:
-        logging.info("Vector memory: %s relevant memories for context %s.",
+        logging.info("Mémoire vectorielle : %s souvenir(s) pertinents pour le contexte %s.",
                      len(relevant_memories), prompt_mode)
-    turn_instruction += " " + camera_context_instruction(FACE_PRESENCE.snapshot())
-    turn_instruction += " " + speaker_context_instruction(speaker_identity)
+    if not online and MODULES['face_recognition']:
+        turn_instruction += " " + camera_context_instruction(FACE_PRESENCE.snapshot())
+    if not online:
+        turn_instruction += " " + speaker_context_instruction(speaker_identity)
     system_message = {
         "role": "system",
         "content": PROMPTS.get(prompt_mode, PROMPTS["Normal"]) + " " + turn_instruction
                    + " " + memory_instruction(relevant_memories),
     }
+    if online:
+        # Do not export local prompts, profiles, recognition or family state.
+        system_message['content'] = (online['config']['provider_instruction']
+            + '\nReply in ' + reply_language
+            + '. Answer once without repeating translations unless requested.')
     messages = [system_message, *conversation]
 
     preview = None
@@ -2056,7 +2263,7 @@ def ask_llm(user_text, request_generation, speaker_identity=None, detected_langu
 
         # Keep generated text in memory until the stream finishes. If the
         # transfer fails, Mio can retry once without speaking a partial answer.
-        for attempt in range(2):
+        for attempt in range(1 if online else 2):
             if not turn_is_current(request_generation):
                 interrupted = True
                 break
@@ -2066,13 +2273,14 @@ def ask_llm(user_text, request_generation, speaker_identity=None, detected_langu
             preview = ReplyPreview(select_first_segment, prepare_tts_item,
                                    lambda: turn_is_current(request_generation) and not shutdown_event.is_set())
             try:
-                full_reply = normalize_reply_names(request_llm_text(messages, request_generation, preview.feed))
+                full_reply = normalize_reply_names(request_llm_text(
+                    messages, request_generation, preview.feed, online=online, sources=sources))
                 rejected = RESPONSE_LANGUAGE_GUARD.rejected_language(full_reply, reply_language, mode=prompt_mode)
                 if rejected:
                     preview.cancel()
-                    logging.warning("LLM response rejected (%s), attempt %s/2: %r",
+                    logging.warning("Réponse LLM refusée (%s), tentative %s/2 : %r",
                                     rejected, attempt + 1, full_reply[:240])
-                    if attempt == 0:
+                    if attempt == 0 and not online:
                         messages = [*messages, {
                             "role": "system",
                             "content": RESPONSE_LANGUAGE_GUARD.config["child_repair_instruction" if prompt_mode == "Child" else "repair_instruction"].format(
@@ -2084,7 +2292,7 @@ def ask_llm(user_text, request_generation, speaker_identity=None, detected_langu
                 if repeated:
                     preview.cancel()
                     logging.warning('Repetitive response rejected before playback: %s (attempt %s/2).', repeated, attempt + 1)
-                    if attempt == 0:
+                    if attempt == 0 and not online:
                         # Do not invite the model to copy its own bad prose again.
                         messages = [message for message in messages if message['role'] != 'assistant']
                         messages.append({'role': 'system', 'content': REPETITION_REPAIR})
@@ -2103,13 +2311,19 @@ def ask_llm(user_text, request_generation, speaker_identity=None, detected_langu
                     "LLM response failed, attempt %s of 2.", attempt + 1,
                     exc_info=True,
                 )
-                if attempt == 0:
+                if attempt == 0 and not online:
                     time.sleep(0.2)
         print()
         if interrupted or stop_requested or request_generation != interrupt_generation:
             return
         if llm_error is not None:
-            logging.error("LLM returned no response after one retry.")
+            if online:
+                with state_lock:
+                    if turn_is_current(request_generation):
+                        chat_events.emit('error', key='online-' + timing['id'],
+                                         text='Online response failed: ' + str(llm_error))
+                return
+            logging.error("Le LLM n'a fourni aucune réponse après un renvoi.")
             if chat_history and chat_history[-1].get("role") == "user":
                 chat_history.pop()
             enqueue_japanese_error_response(request_generation)
@@ -2118,7 +2332,9 @@ def ask_llm(user_text, request_generation, speaker_identity=None, detected_langu
         # The accepted immutable full_reply was already checked in the loop above.
 
         # Keep list numbers and decimals attached to their following context.
-        sentences = re.split(r"(?:(?<=[!?。！？\n])|(?<=\.)(?<!\d\.))\s*", full_reply.strip())
+        speech_reply = online_services.spoken_text(full_reply) if online else full_reply.strip()
+        sentences = (re.split(r"(?:(?<=[!?。！？\n])|(?<=\.)(?<!\d\.))\s*", speech_reply)
+                     if MODULES['speech_output'] else [])
         spoken_parts = 0
         for sentence in sentences:
             clean_sentence = sentence.strip()
@@ -2136,11 +2352,12 @@ def ask_llm(user_text, request_generation, speaker_identity=None, detected_langu
                         prepared_preview = preview.claim(item) if spoken_parts == 0 and preview is not None else None
                         tts_queue.put((*item, prepared_preview))
                         spoken_parts += 1
-        if not spoken_parts:
+        if MODULES['speech_output'] and not spoken_parts:
             enqueue_japanese_error_response(request_generation)
             return
         print(flush=True)
 
+        # Keep the accepted reply intact for display and history. TTS cleanup is voice-only.
         display_reply = full_reply.strip()
         with state_lock:
             if not turn_is_current(request_generation):
@@ -2151,7 +2368,10 @@ def ask_llm(user_text, request_generation, speaker_identity=None, detected_langu
             ])
             chat_events.message('reply-' + timing['id'],
                                 display_reply,
-                                ['Mio'], complete=True, mio=True)
+                                [{'gemini': 'Geminy', 'gpt': 'GPT'}.get(provider, 'Mio')],
+                                complete=True, mio=True, sources=sources)
+        if online or not MODULES['vector_memory']:
+            return  # Never write online exchanges into the local vector-memory pipeline.
         try:
             capture_async(
                 user_text, prompt_mode, URL_LLM, LLM_MODEL_NAME,
@@ -2177,21 +2397,28 @@ def ask_llm(user_text, request_generation, speaker_identity=None, detected_langu
 def verify_startup_services():
     """Check loaded models, not just an open TCP port."""
     checks = (
-        ("Whisper Turbo", "http://127.0.0.1:9000/health",
+        ("Whisper Turbo", COMPONENTS['transcription']['health_url'],
          lambda data: data.get("ready") and data.get("service") == "WhisperTurbo"
+         and data.get("model") == "large-v3-turbo"
          and data.get("confidence_method") == "mean_token_probability"
          and data.get("progressive_protocol") == 1),
-        ("Piper Jessica", "http://127.0.0.1:9881/health",
+        ("Piper Jessica", COMPONENTS['french_voice']['health_url'],
          lambda data: data.get("service") == "PiperTTS"),
-        ("Melo JP/EN", "http://127.0.0.1:9882/health",
+        ("Melo JP/EN", COMPONENTS['multilingual_voice']['health_url'],
          lambda data: data.get("service") == "MeloTTS" and {"JP", "EN-US"}.issubset(data.get("voices", []))),
         ("Voice Changer", URL_VC_CONFIG,
          lambda data: data.get("input_sample_rate") == 22050 and data.get("output_sample_rate") == 22050),
-        ("LM Studio / LLM", COMPONENTS['llm']['health_url'],
+        ("LM Studio / Ministral", COMPONENTS['llm']['health_url'],
          lambda data: any(model.get("state") == "loaded" and LLM_MODEL_NAME in model.get("id", "")
                           for model in data.get("data", []))),
     )
     for name, url, check in checks:
+        if name == 'Whisper Turbo' and not MODULES['voice_input']:
+            continue
+        if name in ('Piper Jessica', 'Melo JP/EN') and not MODULES['speech_output']:
+            continue
+        if name == 'Voice Changer' and not (MODULES['speech_output'] and MODULES['voice_changer']):
+            continue
         response = requests.get(url, timeout=3)
         response.raise_for_status()
         if not check(response.json()):
@@ -2208,19 +2435,25 @@ def read_ui_commands():
             command = json.loads(line)
             if not os.environ.get('MIO_UI_TOKEN') or command.get('token') != os.environ['MIO_UI_TOKEN']:
                 continue
+            if command.get('action') == 'provider_flags':
+                refresh_provider_flags()
+                continue
             if command.get('action') == 'reload':
                 reload_main_requested.set()
                 cancel_current_turn()
                 shutdown_event.set()
                 return
-            if command.get('action') == 'text':
-                text = str(command.get('text', '')).strip()
+            if command.get('action') == 'whisper':
+                text = str(command.get('whisper', '')).strip()
                 if text:
                     identity = author_identity(command.get('author'))
                     message_id = command.get('id')
                     if not isinstance(message_id, str) or not re.fullmatch(r'typed-[a-f0-9]{32}', message_id):
                         message_id = 'typed-' + uuid.uuid4().hex
-                    payload = {'text': text, 'identity': identity, 'id': message_id}
+                    payload = {'whisper': text, 'identity': identity, 'id': message_id}
+                    if typed_control(text):
+                        chat_events.message('user-' + message_id, text, identity['names'], complete=True)
+                        continue
                     ui_text_queue.put_nowait((payload, interrupt_generation))
                     chat_events.message('user-' + message_id, text, identity['names'], complete=True)
         except queue.Full:
@@ -2230,9 +2463,9 @@ def read_ui_commands():
                              text='Message not sent: ' + str(error))
 
 def handle_ui_text(payload):
-    text = payload['text']
+    text = payload['whisper']
     # Typed input is not voice identification and never bypasses facial access.
-    if not FACE_PRESENCE.snapshot().has_known_person:
+    if not face_access_available():
         chat_events.emit('error', key='typed-face-' + str(time.monotonic_ns()),
                          text='Message not sent: a recognized face is required. Copy the message below to try again: ' + text)
         return
@@ -2249,7 +2482,40 @@ def handle_ui_text(payload):
     ask_llm(text, generation, speaker_identity=identity)
 
 
+def selected_modules_ready(running=False):
+    if MODULES['face_recognition'] and not FACE_PRESENCE.snapshot().camera_ready:
+        return False
+    if not MODULES['voice_input']:
+        return True
+    ready = (vosk_ready.is_set() and microphone is not None and microphone.ready.is_set()
+             and aec_client is not None and aec_client.process is not None
+             and aec_client.process.poll() is None
+             and vad_client is not None and vad_client.process is not None
+             and vad_client.process.poll() is None)
+    if running:
+        ready = (ready and capture_thread is not None and capture_thread.is_alive()
+                 and progressive_stt is not None and progressive_stt.worker.is_alive())
+    return bool(ready)
+
+
+def selected_modules_ready(running=False):
+    if MODULES['face_recognition'] and not FACE_PRESENCE.snapshot().camera_ready:
+        return False
+    if not MODULES['voice_input']:
+        return True
+    ready = (vosk_ready.is_set() and microphone is not None and microphone.ready.is_set()
+             and aec_client is not None and aec_client.process is not None
+             and aec_client.process.poll() is None
+             and vad_client is not None and vad_client.process is not None
+             and vad_client.process.poll() is None)
+    if running:
+        ready = (ready and capture_thread is not None and capture_thread.is_alive()
+                 and progressive_stt is not None and progressive_stt.worker.is_alive())
+    return bool(ready)
+
+
 def main():
+    global whisper_pending_phrase
     global microphone, stt_processing, voice_wait_since, aec_client, vad_client, capture_thread, progressive_stt
     if os.environ.get('MIO_UI_TOKEN'):
         threading.Thread(target=read_ui_commands, daemon=True, name='Mio-UI-input').start()
@@ -2261,61 +2527,56 @@ def main():
         while not shutdown_event.wait(1.0):
             with state_lock:
                 publish_chat_state()
-            ready = (vosk_ready.is_set() and microphone.ready.is_set()
-                     and FACE_PRESENCE.snapshot().camera_ready
-                     and aec_client is not None and aec_client.process is not None
-                      and aec_client.process.poll() is None
-                      and vad_client is not None and vad_client.process is not None
-                      and vad_client.process.poll() is None
-                      and capture_thread is not None and capture_thread.is_alive()
-                      and progressive_stt is not None and progressive_stt.worker.is_alive())
+            ready = selected_modules_ready(running=True)
             try:
                 status.write(ready, "Ready" if ready else "Microphone, WebRTC, Silero VAD, Vosk or camera unavailable")
             except OSError:
                 logging.exception("Unable to publish MainApp state")
 
     try:
-        logging.info("Initializing Mio; optional speaker tags in parallel, empty references ignored.")
-        threading.Thread(target=SPEAKER_RECOGNIZER.warm_up, daemon=True, name="Mio-Speaker-Warmup").start()
-        progressive_stt = ProgressiveTranscriber(URL_STT, RUNTIME_CONFIG, turn_is_current,
-                                                SPEAKER_RECOGNIZER, publish_provisional,
-                                                publish_details=publish_chat_transcription,
-                                                consume_result=consume_transcribed_control)
-        progressive_stt.start()
-        aec_client = EchoClient(playback_reference)
-        aec_client.start()
-        logging.info("WebRTC AEC3 ready: microphone cleaned before Vosk and Whisper.")
-        vad_client = VoiceActivityClient()
-        vad_client.start()
-        logging.info("Silero VAD ready: Whisper utterance endings detected in cleaned audio.")
-        start_vosk_trigger()
-        if vosk_process is None:
-            raise RuntimeError("Vosk did not start")
-        FACE_PRESENCE.start()
+        logging.info("Initialisation de Mio ; tags vocaux facultatifs en parallèle, références vides ignorées.")
+        if MODULES['voice_input']:
+            threading.Thread(target=SPEAKER_RECOGNIZER.warm_up, daemon=True, name="Mio-Speaker-Warmup").start()
+            progressive_stt = ProgressiveTranscriber(URL_STT, RUNTIME_CONFIG, turn_is_current,
+                                                    SPEAKER_RECOGNIZER, publish_provisional,
+                                                    publish_details=publish_chat_transcription,
+                                                    consume_result=consume_transcribed_result)
+            progressive_stt.start()
+            aec_client = EchoClient(playback_reference)
+            aec_client.start()
+            logging.info("WebRTC AEC3 prêt : micro nettoyé avant Vosk et Whisper.")
+            vad_client = VoiceActivityClient()
+            vad_client.start()
+            logging.info("Silero VAD prêt : fin des phrases Whisper détectée sur l'audio nettoyé.")
+            start_vosk_trigger()
+            if vosk_process is None:
+                raise RuntimeError("Vosk n'a pas démarré")
+        if MODULES['face_recognition']:
+            FACE_PRESENCE.start()
         threading.Thread(target=tts_worker, daemon=True, name="Mio-TTS").start()
         threading.Thread(target=tts_prepare_worker, daemon=True, name="Mio-TTS-Preparation").start()
-        with open(os.path.join(MAINAPP_DIR, "config", "peripheriques_audio.json"), encoding="utf-8") as audio_config_file:
-            audio_config = json.load(audio_config_file)
-        logging.info("VB Cable gate before WebRTC: threshold %.2f%% RMS, hold %s ms.",
-                     100 * float(audio_config["vb_cable_gate_rms"]),
-                     audio_config["vb_cable_gate_hold_ms"])
-        microphone = MicrophoneInput(
-            resolve_microphone_device(), SAMPLE_RATE, VOSK_FRAME_SAMPLES,
-            float(RUNTIME_CONFIG["microphone_queue_seconds"]), on_microphone_chunk, on_microphone_error,
-            preroll_seconds=float(RUNTIME_CONFIG["audio_preroll_seconds"]),
-            process_chunk=aec_client.process_chunk,
-            gate_rms_threshold=float(audio_config["vb_cable_gate_rms"]),
-            gate_hold_seconds=float(audio_config["vb_cable_gate_hold_ms"]) / 1000,
-            whisper_gate_rms_threshold=float(audio_config["whisper_gate_rms"]),
-        )
-        microphone.start()
+        if MODULES['voice_input']:
+            with open(os.path.join(MAINAPP_DIR, "config", "peripheriques_audio.json"), encoding="utf-8") as audio_config_file:
+                audio_config = json.load(audio_config_file)
+            logging.info("Gate VB Cable avant WebRTC : seuil %.2f%% RMS, tenue %s ms.",
+                         100 * float(audio_config["vb_cable_gate_rms"]),
+                         audio_config["vb_cable_gate_hold_ms"])
+            microphone = MicrophoneInput(
+                resolve_microphone_device(), SAMPLE_RATE, VOSK_FRAME_SAMPLES,
+                float(RUNTIME_CONFIG["microphone_queue_seconds"]), on_microphone_chunk, on_microphone_error,
+                preroll_seconds=float(RUNTIME_CONFIG["audio_preroll_seconds"]),
+                process_chunk=aec_client.process_chunk,
+                gate_rms_threshold=float(audio_config["vb_cable_gate_rms"]),
+                gate_hold_seconds=float(audio_config["vb_cable_gate_hold_ms"]) / 1000,
+                whisper_gate_rms_threshold=float(audio_config["whisper_gate_rms"]),
+            )
+            microphone.start()
         deadline = time.monotonic() + float(RUNTIME_CONFIG["startup_timeout_seconds"])
         last_error = "Waiting for microphone, Vosk and camera"
         while time.monotonic() < deadline:
-            if vosk_process.poll() is not None:
-                raise RuntimeError("Vosk stopped during initialization")
-            if (vosk_ready.is_set() and microphone.ready.is_set()
-                    and FACE_PRESENCE.snapshot().camera_ready):
+            if MODULES['voice_input'] and vosk_process.poll() is not None:
+                raise RuntimeError("Vosk s'est arrêté pendant son initialisation")
+            if selected_modules_ready():
                 try:
                     verify_startup_services()
                     break
@@ -2324,14 +2585,16 @@ def main():
             status.write(False, last_error)
             time.sleep(1)
         else:
-            raise RuntimeError(f"Incomplete startup: {last_error}; micro : {microphone.error}")
+            raise RuntimeError("Startup incomplete: " + last_error)
 
         threading.Thread(target=conversation_watchdog, daemon=True, name="Mio-State").start()
         runtime_ready.set()
-        capture_thread = threading.Thread(target=capture_utterances, daemon=True, name="Mio-Phrases")
-        capture_thread.start()
+        if MODULES["voice_input"]:
+            capture_thread = threading.Thread(target=capture_utterances, daemon=True, name="Mio-Phrases")
+            capture_thread.start()
         try:
-            start_memory_worker(URL_LLM, LLM_MODEL_NAME, memory_can_extract)
+            if MODULES["vector_memory"]:
+                start_memory_worker(URL_LLM, LLM_MODEL_NAME, memory_can_extract)
         except Exception:
             logging.exception('Persistent memory unavailable; conversation continues.')
         status.write(True, "Models, Vosk, microphone and camera ready")
@@ -2351,13 +2614,16 @@ def main():
             if typed is not None:
                 typed, typed_generation = typed
                 if typed_generation != interrupt_generation:
-                    chat_events.emit('error', key='typed-cancelled-' + str(time.monotonic_ns()), text='Message cancelled after a state change: ' + typed['text'])
+                    chat_events.emit('error', key='typed-cancelled-' + str(time.monotonic_ns()), text='Message cancelled after a state change: ' + typed['whisper'])
                     continue
                 conversation_pending.set()
                 try:
                     handle_ui_text(typed)
                 finally:
                     conversation_pending.clear()
+                continue
+            if not MODULES["voice_input"]:
+                shutdown_event.wait(.1)
                 continue
             try:
                 txt, confidence, language, identity, generation = progressive_stt.results.get(timeout=0.1)
@@ -2374,7 +2640,7 @@ def main():
                 language_key = language.split("-", maxsplit=1)[0]
                 if language and not WHISPER_ALLOWED_LANGUAGES.get(language_key, WHISPER_ALLOWED_LANGUAGES.get(language)):
                     logging.info("Utterance rejected: language not allowed (%s).", language)
-                    publish_chat_transcription(txt + ' — Language not allowed.', generation,
+                    publish_chat_transcription(txt + ' — Langue non autorisée.', generation,
                                                identity['_timing']['id'], identity, 'error')
                     enqueue_japanese_error_response(generation)
                     continue
@@ -2383,7 +2649,7 @@ def main():
                     "en": WHISPER_EN_MIN_TOKEN_CONFIDENCE,
                 }.get(language_key, WHISPER_MIN_TOKEN_CONFIDENCE)
                 if txt and confidence < minimum_confidence:
-                    logging.info("Utterance rejected: mean token probability %.1f%% < %.1f%%.",
+                    logging.info("Phrase rejetée : moyenne des probabilités des tokens %.1f%% < %.1f%%.",
                                  confidence * 100, minimum_confidence * 100)
                     publish_chat_transcription(txt + ' — Transcription trop incertaine.', generation,
                                                identity['_timing']['id'], identity, 'error')
@@ -2391,17 +2657,22 @@ def main():
                     continue
                 if not txt:
                     continue
+                provider = PROVIDERS.command(txt)
+                if provider in ('gpt', 'gemini') or normalize_control_phrase(txt) in PROVIDERS.switch_commands:
+                    select_provider(provider)
+                    continue
                 # Vosk is primary; exact commands in a valid Whisper result are a fallback.
                 if is_pause_request(txt):
                     pause_mio()
                     continue
                 if is_mio_wake_request(txt) or is_short_mio_wake(txt):
-                    wake_session()
+                    handle_vosk_command('child_exit', txt, source='whisper')
                     continue
                 if normalize_control_phrase(txt) in {normalize_control_phrase(p) for p in TRIGGER_PHRASES["flirt"]}:
                     handle_vosk_command("flirt", txt)
                     continue
                 if is_stop_only_command(txt):
+                    handle_vosk_command('child_exit', txt, source='whisper')
                     continue
                 clean = clean_wake_words(txt)
                 while (turn_is_current(generation) and not shutdown_event.is_set()
@@ -2411,7 +2682,10 @@ def main():
                     print(f"\nToi : {clean}", flush=True)
                     ask_llm(clean, generation, speaker_identity=identity, detected_language=language)
             finally:
-                conversation_pending.clear()
+                with state_lock:
+                    if whisper_pending_phrase == (generation, identity.get('_timing', {}).get('id')):
+                        whisper_pending_phrase = None
+                    conversation_pending.clear()
     except KeyboardInterrupt:
         logging.info("Shutdown requested")
     except Exception as exc:

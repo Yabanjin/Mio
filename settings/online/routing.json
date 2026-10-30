@@ -1,0 +1,12 @@
+{
+  "local_switch_phrases": [
+    "Are you there Mio"
+  ],
+  "gpt_wake_phrases": [
+    "Are you there GPT"
+  ],
+  "gemini_wake_phrases": [
+    "Are you there Gemini",
+    "Are you there Geminy"
+  ]
+}

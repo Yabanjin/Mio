@@ -1,7 +1,8 @@
 {
-  "microphone_name_prefix": "CABLE Output (VB-Audio Virtual",
-  "microphone_hostapi": "MME",
+  "microphone_name_prefix": "",
+  "microphone_hostapi": "",
   "vb_cable_gate_rms": 0.005,
   "whisper_gate_rms": 0.003,
-  "vb_cable_gate_hold_ms": 200
+  "vb_cable_gate_hold_ms": 200,
+  "microphone_source": "windows_default"
 }

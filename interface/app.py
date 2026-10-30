@@ -8,7 +8,7 @@ from tkinter import messagebox
 import uuid
 import json
 from ui_interaction import install, attach
-from settings_store import ROOT, APPLICATION, read
+from settings_store import ROOT, APPLICATION, read, write
 
 os.environ['MIO_BACKGROUND_START'] = '1'
 sys.path.insert(0, str(ROOT / 'src/MainApp'))
@@ -97,9 +97,9 @@ class MioApp(ChatWindow):
         self.status.grid(row=0, column=0, sticky='w')
         self.child_status = tk.Label(status_group, bg=BG, fg='#fcd34d', anchor='w', pady=0, borderwidth=0, highlightthickness=0, font=('Segoe UI', 9, 'bold'))
         self.child_status.grid(row=1, column=0, sticky='w')
-        self.detail = tk.Label(header, bg=BG, fg='#cbd5e1', anchor='w',
+        self.detail = tk.Label(status_group, bg=BG, fg='#cbd5e1', anchor='w',
                                font=('Segoe UI', 8), width=28, height=1, wraplength=0)
-        self.detail.grid(row=0, column=0, sticky='sw', padx=(88, 0))
+        self.detail.grid(row=2, column=0, sticky='w')
         self.detail.configure(text='')
         self.customize_button = tk.Button(header, text='Customize', command=self.customize,
                                          bg='#334155', fg=FG, relief='flat', padx=5, font=('Segoe UI', 9))
@@ -109,6 +109,18 @@ class MioApp(ChatWindow):
         self.start_button.grid(row=0, column=3, padx=3, sticky='n')
         tk.Button(header, text='Logs', command=self.show_logs, bg='#263449', fg=FG,
                   relief='flat', padx=5, font=('Segoe UI', 9)).grid(row=0, column=4, padx=(3, 0), sticky='n')
+        services = tk.Menubutton(header, text='Services ▾', bg='#263449', fg=FG,
+                                relief='flat', padx=5, font=('Segoe UI', 9))
+        services.grid(row=0, column=5, padx=(3, 0), sticky='n')
+        menu = tk.Menu(services, tearoff=False)
+        services.configure(menu=menu)
+        self.online_flags = {}
+        for provider, label in (('gpt', 'GPT enabled'), ('gemini', 'Gemini enabled')):
+            value = tk.BooleanVar(master=self.root, value=False)
+            self.online_flags[provider] = value
+            menu.add_checkbutton(label=label, variable=value,
+                                 command=lambda provider=provider: self.toggle_online(provider))
+        self.refresh_online_flags()
         opacity = tk.Frame(header, bg=BG)
         opacity.grid(row=0, column=1, padx=(4, 3), sticky='n')
         self.transparency_label = tk.Label(opacity, bg=BG, fg=FG, pady=0, font=('Segoe UI', 8))
@@ -175,11 +187,52 @@ class MioApp(ChatWindow):
         if self.editor and self.editor.winfo_exists():
             self.editor.lift()
             return
-        self.editor = Customization(self.root, self.settings_saved, self.reload_services)
+        self.editor = Customization(self.root, self.settings_saved, self.reload_services, self.restart_modules)
+
+    def restart_modules(self):
+        if self.stopping or self.reloading_main:
+            return
+        if self.editor and self.editor.winfo_exists():
+            self.editor.destroy()
+        if self.process and self.process.poll() is None:
+            self.reload_requested = True
+            self.stop_services()
+        else:
+            self.start_services()
 
     def settings_saved(self):
         self.detail.configure(text='Settings saved — apply with Reload')
         self.refresh_authors()
+        self.refresh_online_flags()
+        self.notify_provider_flags()
+
+    def refresh_online_flags(self):
+        for provider, value in self.online_flags.items():
+            try:
+                value.set(read(ROOT / 'settings/online' / (provider + '.json')).get('enabled') is True)
+            except (OSError, ValueError):
+                value.set(False)
+
+    def notify_provider_flags(self):
+        if self.process and self.process.poll() is None and not self.reloading_main:
+            try:
+                self.process.stdin.write(json.dumps({'action': 'provider_flags', 'token': self.token}) + '\n')
+                self.process.stdin.flush()
+            except (OSError, ValueError):
+                self.error('Provider setting saved. Reload Mio to apply it to the running engine.')
+
+    def toggle_online(self, provider):
+        try:
+            if self.editor and self.editor.winfo_exists():
+                raise ValueError('Close Customize before changing service switches here.')
+            path = ROOT / 'settings/online' / (provider + '.json')
+            config = read(path)
+            config['enabled'] = self.online_flags[provider].get()
+            write(path, config)
+            self.notify_provider_flags()
+        except (OSError, ValueError) as error:
+            self.refresh_online_flags()
+            self.error(str(error))
 
     def refresh_authors(self):
         for button in self.author_options.winfo_children():
@@ -241,6 +294,10 @@ class MioApp(ChatWindow):
 
     def reload_services(self):
         if self.stopping or self.reloading_main:
+            return
+        from module_settings import load_modules
+        if self.manager and self.manager.modules != load_modules(ROOT):
+            self.restart_modules()
             return
         if not self.process or self.process.poll() is not None:
             self.detail.configure(text='Settings saved. Press Start when ready.')
@@ -325,10 +382,6 @@ class MioApp(ChatWindow):
 
     def receive(self, event):
         kind = event.get('kind')
-        if kind == 'retain_service':
-            if event.get('token') in self.session_tokens:
-                self.manager.retain_service(event['pid'])
-            return
         if kind == 'main_stopped_for_reload':
             self.reloading_main = False
             if self.closing or self.stopping:
@@ -401,10 +454,6 @@ class MioApp(ChatWindow):
             super().receive(event)
             if kind == 'state' and event.get('ready') and self.busy:
                 self.customize_button.configure(state='normal')
-                try:
-                    self.manager.minimize_component_windows()
-                except OSError as error:
-                    self.log_lines.put_nowait('Could not minimize component windows: ' + str(error) + '\n')
 
     def error(self, text):
         super().receive({'kind': 'error', 'key': uuid.uuid4().hex, 'text': text})

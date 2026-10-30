@@ -1,161 +1,107 @@
-MIO — ÉTAT DU PROJET ET GUIDE D'INSTALLATION
-==========================================
+MIO — INSTALLATEURS WINDOWS FR / EN — 30 OCTOBRE 2026
+====================================================
 
 DÉJÀ FAIT
 ---------
-- Deux installateurs EXE indépendants : commandes vocales françaises (FR)
-  ou anglaises (EN), avec le modèle Vosk correspondant sélectionné.
-- Installation graphique dans le dossier choisi, raccourcis et désinstallation
-  graphique avec confirmation. L'entrée s'appelle « Uninstall Mio ».
-- Interface de chat, saisie de texte, choix de l'auteur, copier-coller,
-  défilement et pages de personnalisation par module.
-- Modules internes et leurs modèles vocaux/de reconnaissance inclus.
-  L'environnement Python et ses dépendances sont installés séparément.
-- Paquets anonymisés : mémoire initiale vide, profils génériques User, Child
-  et Adult, sans enregistrement vocal ni description personnelle préchargée.
-- Prompts génériques modifiables et consigne d'écrire les valeurs en mots.
-- Reload Mio relance le moteur et ses auxiliaires nécessaires, sans recharger
-  tous les serveurs externes. Les fenêtres techniques sont réduites au démarrage.
-- Connexions aux services externes et réglages matériels conservés pour le test.
+- EXE autonome : cliquer, choisir un dossier vide, installer, puis « Close and start Mio ».
+- Image et icône Mio dans l'installateur ; désinstallation graphique avec confirmation.
+- Dernière source App clean : chat compact, copier-coller Windows, défilement automatique,
+  noms des interlocuteurs et état du fournisseur ; détails d'erreur dans Logs.
+- Modules locaux activables individuellement, choix du microphone et test avec vu-mètre.
+  MicroBoost est facultatif ; Stop test ferme uniquement l'instance lancée par le test.
+- GPT et Gemini : pages dédiées, activation, champ de clé masqué, test de connexion,
+  choix du modèle, voix locale ou du fournisseur et recherche web si prise en charge.
+- Bascule entre fournisseurs quand Mio est éveillée, Stop commun, Whisper bloqué
+  pendant la réponse et après validation d'une première phrase ; commandes Vosk actives.
+- Profils User/Child/Adult/Mio génériques, mémoire initiale vierge, aucun échantillon
+  vocal ni clé API. Les modes Child/Adult et souvenirs locaux restent locaux.
 
-RESTE À FAIRE / À VALIDER
------------------------
-- Valider ces deux EXE anonymisés après installation sur un autre PC,
-  puis vérifier toute la chaîne : microphone, caméra, reconnaissance et réponse.
-- Ajouter un choix guidé « un GPU / deux GPU » et valider le fonctionnement
-  simultané sur une seule carte. Les réglages actuels ciblent deux GPU.
-- Finaliser une traduction française complète : FR désigne les commandes
-  vocales ; l'interface et les textes génériques sont actuellement en anglais.
-- Ajouter la saisie et la gestion des clés d'API, l'authentification et les
-  adaptations nécessaires aux différents fournisseurs d'API hébergées.
-- Simplifier l'assistant de première configuration. Les programmes externes,
-  les périphériques et l'enregistrement des personnes restent à configurer.
+RESTE À VALIDER
+---------------
+- Réinstallation réelle et conversation complète après installation : micro, voix,
+  arrêt, connexion aux logiciels externes et API. Le contrôle du paquet ne remplace
+  pas cet essai sur le PC cible.
+- Fonctionnement de toute la chaîne sur un seul GPU et assistant de configuration simplifié.
+- Traduction complète de l'interface : FR/EN désigne les commandes vocales Vosk.
+  L'interface, les prompts et réponses automatiques génériques sont en anglais.
 
+CE QUI EST INSTALLÉ
+------------------
+Mio, son interface, son moteur, ses modules internes (Whisper, Vosk, Piper, Melo,
+mémoire vectorielle, reconnaissance vocale, VAD, annulation d'écho) et les modèles
+internes disponibles dans le paquet. Un environnement Python commun est créé.
+Python 3.11 peut être installé pour l'utilisateur s'il manque ; les dépendances
+sont téléchargées. Internet et de l'espace libre sont donc nécessaires.
 
-MODE D'EMPLOI SIMPLE
-===================
+CE QUI N'EST PAS INSTALLÉ
+------------------------
+LM Studio et ses modèles LLM, Agent DVR, CodeProject.AI, Voice Changer/RVC et ses
+modèles, MicroBoost, VB-CABLE, ANIMATE, les avatars, les pilotes et les comptes/API.
+Ces programmes et leurs données restent séparés de Mio.
+
+MODE D'EMPLOI
+=============
 
 1. PRÉPARER LE PC
-----------------
-Cette version vise Windows 64 bits avec un GPU NVIDIA et un pilote compatible
-avec les bibliothèques CUDA utilisées par Mio. Elle ne propose pas de mode
-CPU ou AMD prêt à l'emploi.
+Windows 64 bits, GPU NVIDIA et pilote compatible avec les dépendances CUDA.
+Pour tout faire en local : un GPU 24 Go recommandé, ou deux GPU de 12 Go chacun.
+La taille du LLM et du contexte détermine la mémoire nécessaire ; deux GPU de
+12 Go ne forment pas automatiquement un seul espace de 24 Go.
+Réglage initial : services sur GPU 0 et LLM sur GPU 1. Avec une seule carte,
+dans Language model > Local model loading : mainGpu=0, disabledGpus=[].
+Garder services_gpu="0" dans Startup. Cette configuration complète reste à tester.
 
-Configurations recommandées comme objectifs pour tout faire en local :
-- Un GPU avec 24 Go de VRAM : modèle de langage et services sur la même carte.
-- Deux GPU avec 12 Go de VRAM chacun : services Mio sur une carte et modèle
-  de langage sur l'autre.
+2. INSTALLER
+Choisir Mio Setup FR Test.exe pour les commandes françaises, EN pour l'anglais.
+Un seul EXE suffit : aucun dossier payload à fournir à côté.
+Choisir un dossier vide dédié ; l'installateur conserve les installations existantes.
+Attendre la fin des téléchargements et vérifications. En cas d'erreur, consulter
+le journal data\logs\installation.log dans le dossier choisi.
 
-Ces indications ne garantissent pas qu'un modèle de langage quelconque tiendra
-en mémoire. Sa taille, sa quantification, le contexte et les autres services
-comptent aussi. Deux cartes de 12 Go ne deviennent pas automatiquement une
-carte de 24 Go. Leur mémoire est distincte dans la configuration actuelle.
+3. CONFIGURER
+Ouvrir Mio puis Customize. Les connexions sont génériques, sans les chemins privés
+de la machine de développement : adapter les chemins et identifiants avant Start.
+Configurer LM Studio et le même identifiant de modèle dans la connexion et le
+chargement local. Installer le LLM séparément.
+Dans Mio — Modules, choisir les fonctions nécessaires. Par défaut : entrée micro,
+voix locale et mémoire activées ; visages, identification vocale et RVC désactivés.
+Une caméra n'est donc pas obligatoire dans la configuration initiale.
+Dans Microphone, sélectionner l'entrée Windows par défaut ou le périphérique voulu,
+cliquer Test, vérifier le niveau et Stop. MicroBoost et VB-CABLE peuvent aider à
+augmenter le gain si nécessaire, après installation et configuration séparées.
+Activer les visages ou RVC seulement après configuration de leurs logiciels externes.
+Save enregistre ; Reload applique. Modifier les modules locaux relance la session.
 
-Prévoir Internet pour les dépendances Python, un microphone, une sortie audio
-et une caméra pour la chaîne actuelle avec autorisation faciale. Garder assez
-d'espace disque pour Mio, son environnement et les modèles externes choisis.
+4. UTILISER
+Start démarre la session configurée. Réveiller Mio avec « réveille toi Mio » (FR)
+ou « wake up Mio » (EN). Les commandes actives apparaissent dans Controls.
+Choisir l'auteur avant Send pour le texte ; Ctrl+Entrée envoie, Entrée ajoute une ligne.
+Stop coupe l'échange tout en gardant le fournisseur sélectionné.
+Le sommeil exige de réveiller Mio locale avant toute nouvelle bascule.
+Ne pas lancer FR et EN simultanément : leurs ports internes sont communs.
 
-2. CHOISIR ET INSTALLER MIO
---------------------------
-- Commandes françaises : lancer « Mio Setup FR Test.exe ».
-- Commandes anglaises : lancer « Mio Setup EN Test.exe ».
+5. GPT / GEMINI FACULTATIFS
+Dans Online — GPT ou Online — Gemini : choisir un identifiant de modèle réellement
+accessible à son compte, enregistrer sa propre clé, puis tester la connexion et activer.
+Le bouton vérifie l'accès API ; il ne valide pas une conversation vocale complète.
+La voix locale est sélectionnée par défaut. La voix fournisseur demande aussi
+son modèle et son nom de voix ; RVC reste applicable s'il est activé et configuré.
+En FR, « T'es la GPT », « T'es la Gemini » et « T'es la Mio » changent de modèle
+pendant l'éveil. En EN : « Are you there GPT / Gemini / Mio ».
+Éditer ces mots dans Online — Commands. La reconnaissance dépend du vocabulaire Vosk.
+Les clés ne sont pas incluses dans le paquet ; la clé saisie est stockée dans le
+Gestionnaire d'identification Windows pour cette installation. Son champ est masqué.
+Les fournisseurs reçoivent le message et leur historique temporaire ; les profils,
+prompts familiaux et souvenirs locaux ne sont pas ajoutés automatiquement.
+Les tarifs, quotas et modèles disponibles dépendent du compte et du fournisseur.
 
-Chaque EXE contient son paquet : aucun dossier payload n'est nécessaire à côté.
-Cliquer Browse, choisir un dossier vide, par exemple un nouveau dossier Mio,
-puis cliquer Install Mio. Le dossier proposé par défaut est
-%LOCALAPPDATA%\Mio. Le raccourci Bureau est facultatif.
+6. ARRÊTER ET DÉSINSTALLER
+Fermer Mio avec la croix. Les services Windows externes peuvent demander une
+confirmation administrateur à chaque démarrage/arrêt ; aucun accord permanent ajouté.
+Lancer Uninstall Mio depuis le menu Démarrer, vérifier le dossier puis confirmer.
+Les fichiers et données de cette installation sont supprimés, les programmes externes
+restent en place. Une application encore ouverte doit être fermée avant suppression.
+Si une clé API a été enregistrée, la retirer depuis sa page API avant désinstallation.
 
-Attendre la fin de l'extraction et de l'installation des dépendances. Python
-3.11 64 bits avec Tkinter est recherché et son installation est tentée s'il
-manque. En cas d'échec, installer Python 3.11 avec Tkinter et relancer.
-À la fin, cliquer « Close and start Mio » pour ouvrir le chat.
-
-3. CONNECTER LES PROGRAMMES EXTERNES
------------------------------------
-L'EXE installe Mio et ses composants internes, pas les applications suivantes :
-- LM Studio et le modèle de langage choisi ;
-- Agent DVR et CodeProject.AI pour la caméra et les visages ;
-- VoiceChanger/RVC et son modèle de conversion vocale ;
-- MicroBoost, Insta360 Link Controller et les pilotes/périphériques audio.
-
-La chaîne complète actuelle attend les services externes configurés. Les chemins
-conservés dans ces versions de test ne sont pas une configuration universelle.
-
-Ouvrir Customize :
-- Language model : renseigner les adresses du serveur et le modèle disponible.
-  Utiliser le même identifiant dans « Connection and model » et
-  « Local model loading » pour le chargement local actuel.
-- Agent DVR camera, CodeProject.AI faces et Voice changer : vérifier les URL
-  et les paramètres de lancement de chaque programme.
-- Startup > Interface runtime : vérifier les exécutables, dossiers de travail
-  et ressources. Désactiver les utilitaires de démarrage inutilisés.
-- Mio — Main settings : vérifier les entrées/sorties audio. Le routage par
-  câble audio virtuel préconfiguré doit correspondre aux périphériques du PC.
-
-Enregistrer chaque page avec Save. Un avatar VRM est facultatif et nécessite
-son propre logiciel : aucun avatar ni logiciel d'avatar n'est installé ici.
-
-4. VÉRIFIER L'AFFECTATION DES GPU
--------------------------------
-Les valeurs actuelles utilisent GPU 0 pour les services Mio et GPU 1 pour
-le modèle de langage. Vérifier que ces indices correspondent aux bonnes cartes.
-
-Pour essayer un seul GPU de 24 Go, dans Language model > Local model loading,
-mettre mainGpu à 0 et disabledGpus à [] (liste vide). Garder services_gpu à "0"
-dans Startup > Interface runtime. Choisir un modèle qui laisse assez de VRAM
-aux services vocaux. Ce montage reste à valider avec tous les services actifs.
-
-5. PERSONNALISER ET DÉMARRER
----------------------------
-- Mio — Texts : modifier Prompt / Common, Normal, Adult ou Child, les réponses
-  automatiques et les textes de langue. Common s'applique aux trois modes.
-- Mio — Timings : régler les délais. Les autres pages regroupent les modules.
-- SpeechBrain recognition : les profils n'ont aucun échantillon vocal.
-  Pour reconnaître une voix, ajouter ses références et configurer leurs chemins.
-  Les visages doivent être enregistrés dans le service externe correspondant.
-
-Cliquer Save, revenir au chat puis Start. Accepter la demande administrateur
-Windows pour Agent DVR lorsque son démarrage ou son arrêt est demandé.
-Cette autorisation n'est pas enregistrée comme permission permanente.
-
-Commandes de réveil : « réveille-toi Mio » / « yo Mio » en FR ;
-« hey Mio » / « wake up Mio » en EN. « stop » interrompt une réponse.
-Les commandes configurées sont rappelées dans Controls.
-
-Pour écrire, choisir User, Child ou Adult, saisir le message puis cliquer Send
-ou utiliser Ctrl+Entrée. Entrée seule ajoute une ligne. Le choix de l'auteur
-ne contourne pas l'autorisation faciale et n'identifie pas une voix.
-
-Après une modification de prompt ou de délai, utiliser Reload Mio dans une
-page Mio. Un réglage propre à un serveur externe demande son propre redémarrage.
-
-6. API EXTERNES : CE QUI EST POSSIBLE AUJOURD'HUI
-----------------------------------------------
-Certaines adresses de service sont modifiables. Un serveur de langage distant
-peut être raccordé s'il expose les formats de requête, de réponse en flux et
-de contrôle de disponibilité attendus, sans authentification supplémentaire.
-Il faut alors désactiver le chargement local automatique du LLM et adapter
-les paramètres de connexion et de lancement. Ce n'est pas un branchement
-automatique à n'importe quelle API.
-
-La gestion des clés et des fournisseurs hébergés reste à développer. De plus,
-ces EXE imposent encore les adresses locales des services Whisper et TTS internes.
-Changer une URL ne remplace donc pas tous les modules locaux par des API distantes.
-
-7. ARRÊTER, DÉPANNER OU DÉSINSTALLER
-----------------------------------
-Fermer Mio avec la croix. Ne pas lancer les éditions FR et EN simultanément :
-elles utilisent les mêmes ports. Logs affiche les journaux ; leurs fichiers
-se trouvent aussi dans data\logs du dossier installé.
-
-En cas d'échec d'installation, consulter data\logs\installation.log.
-Si le dossier contient déjà une installation, en choisir un autre vide ou
-désinstaller d'abord cette installation.
-
-Pour supprimer Mio, fermer l'application, lancer « Uninstall Mio » depuis le
-menu Démarrer et confirmer. Les données locales de cette installation sont
-supprimées. Les programmes externes, leurs modèles et leurs données sont conservés.
-
-La mémoire est vide au départ ; Mio peut ensuite conserver de nouveaux échanges.
-L'anonymisation concerne le paquet. Les services externes connectés conservent
-leurs propres données et peuvent renvoyer leurs identités enregistrées.
+Les EXE de ce dossier sont locaux. Le lien Google Drive n'est pas automatiquement
+mis à jour : comparer les SHA-256 avec SHA256SUMS.txt pour identifier cette version.

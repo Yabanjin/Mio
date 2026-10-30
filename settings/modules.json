@@ -1,0 +1,8 @@
+{
+  "voice_input": true,
+  "speaker_recognition": false,
+  "face_recognition": false,
+  "speech_output": true,
+  "voice_changer": false,
+  "vector_memory": true
+}

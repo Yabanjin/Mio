@@ -1,5 +1,25 @@
 # Development conventions
 
+## To do — online providers (prototype work pending validation)
+
+- [ ] Prepare and validate provider switching in App proto MIO before porting it here.
+- [ ] Add separate settings pages for online commands, OpenAI/GPT and Google Gemini,
+  with model, voice, web-search and credential configuration and clear field help.
+- [ ] Support customizable provider wake phrases. Requested prototype phrases:
+  "GPT reveille toi" and "Geminy reveille toi" (also accept "Gemini reveille toi").
+  Existing Mio wake phrases return to local inference and local speech.
+- [ ] Show MIO LOCAL, GPT MODE or GEMINI MODE alongside the current activity state;
+  keep provider selection separate from family/personality modes and access rules.
+- [ ] Keep Stop behavior identical for every provider: interrupt playback, cancel
+  the current turn, clear pending output and ignore late responses. Keep the
+  selected provider active for the next request.
+- [ ] Connect online LLM, speech and web information, with visible clickable sources.
+  Keep credentials out of source control and document what context is sent online.
+- [ ] Validate API configuration, cancellation, switching and local return in the
+  prototype. Port only after user approval, then update clean installers/manuals.
+
+Status update, 30 October 2026: the source port is implemented. The checklist above is retained as the original roadmap; see SOURCE-UPDATE-20261030.md for current scope and remaining live validation. Installers and Git publication are not updated by this port.
+
 Mio is under development, coded by GPT with Yaban as software designer.
 
 ## Project language

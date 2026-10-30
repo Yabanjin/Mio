@@ -1,0 +1,14 @@
+{
+  "local": {
+    "text": "Hi, Mio here.",
+    "language": "English"
+  },
+  "gpt": {
+    "text": "Hi, GPT here.",
+    "language": "English"
+  },
+  "gemini": {
+    "text": "Hi, Geminy here.",
+    "language": "English"
+  }
+}

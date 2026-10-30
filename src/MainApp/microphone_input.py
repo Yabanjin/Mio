@@ -53,7 +53,7 @@ class MicrophoneInput:
         for name, row in zip(("VB Cable", "after Whisper gate", "after WebRTC Whisper"), self.audio_stats):
             labels.append("%s RMS %.2f%% / pic %.2f%% / plafond %.2f%%" % (
                 name, 100 * np.sqrt(row[0] / row[3]), 100 * row[1], 100 * row[2] / row[3]))
-        logging.info("Audio diagnostics: %s; capture-eligible blocks %s/%s.",
+        logging.info("Diagnostic audio : %s ; blocs admissibles capture %s/%s.",
                      " ; ".join(labels), self.audio_stats_eligible, self.audio_stats_frames)
         self.audio_stats.fill(0)
         self.audio_stats_frames = self.audio_stats_eligible = 0
@@ -141,7 +141,7 @@ class MicrophoneInput:
                         except queue.Full:
                             self.dropped_frames += 1
                             if self.dropped_frames % 50 == 1:
-                                logging.warning("Audio queue full: %s block(s) lost before assembly.",
+                                logging.warning("File audio saturée : %s bloc(s) perdus avant assemblage.",
                                                 self.dropped_frames)
                             try:
                                 self.frames.get_nowait()

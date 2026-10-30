@@ -84,6 +84,10 @@ def load_trigger_phrases() -> tuple[str, ...]:
                 normalized = normalize(phrase)
                 if normalized:
                     phrases.append((normalized, category))
+    for phrase in json.loads(os.environ.get('MIO_PROVIDER_COMMANDS', '[]')):
+        normalized = normalize(phrase)
+        if normalized and all(normalized != existing for existing, _ in phrases):
+            phrases.append((normalized, 'provider'))
     if not phrases:
         raise ValueError(f"No trigger configured in {TRIGGER_DIR}")
     return tuple(phrases)
@@ -149,7 +153,7 @@ def matching_trigger(text: str) -> tuple[str, str, float] | None:
 
     category, phrase, score, _matched_word_count = best_match
     threshold = MIN_TRIGGER_TEXT_MATCH
-    if category == "wake":
+    if category in ("wake", "provider"):
         # While Mio sleeps, ordinary speech must not wake her just because its
         # last word resembles part of a wake phrase. Require at least two
         # recognized words and a near-exact match to the configured phrase.
@@ -239,10 +243,12 @@ def main() -> int:
         flush=True,
     )
     model = VoskModel(str(MODEL_PATH))
-    # A small command grammar keeps the French model focused on wake/stop
+    # A small command grammar keeps the command model focused on wake/stop
     # phrases instead of decoding unrestricted sentences while Mio is idle.
     command_grammar = json.dumps(
-        [phrase for phrase, _category in NORMALIZED_TRIGGERS] + ["[unk]"],
+        [phrase for phrase, category in NORMALIZED_TRIGGERS
+         if category != 'provider' or all(model.vosk_model_find_word(word) >= 0
+                                          for word in phrase.split())] + ["[unk]"],
         ensure_ascii=False,
     )
     recognizer = KaldiRecognizer(model, SAMPLE_RATE, command_grammar)

@@ -6,6 +6,7 @@ import os
 import re
 from pathlib import Path
 import socket
+import sys
 import subprocess
 import threading
 import time
@@ -13,6 +14,8 @@ import uuid
 from urllib.request import Request, urlopen
 from urllib.error import URLError
 from settings_store import ROOT, APPLICATION, read
+sys.path.insert(0, str(ROOT / "src/MainApp"))
+from module_settings import load_modules
 
 
 class Cancelled(Exception):
@@ -112,6 +115,7 @@ class Runtime:
         self.log_handles = []
         self.job = None
         self.config = None
+        self.modules = load_modules(ROOT)
         self.finished = threading.Event()
         self.owned_windows_services = []
         self.component_windows_minimized = False
@@ -162,10 +166,12 @@ class Runtime:
                    HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1')
         # Resolve the selected resource paths without moving runtime databases.
         for name, path in self.config['resources'].items():
+            if not self.resource_enabled(name):
+                continue
             env[name] = str(self.resolve(path))
         env['PYTHONPATH'] = str(ROOT / 'vendor/MeloTTS') + os.pathsep + env.get('PYTHONPATH', '')
-        env['HF_HOME'] = env['MIO_MELO_CACHE']
-        env['HUGGINGFACE_HUB_CACHE'] = str(Path(env['MIO_MELO_CACHE']) / 'hub')
+        env['HF_HOME'] = str(self.resolve(self.config['resources']['MIO_MELO_CACHE']))
+        env['HUGGINGFACE_HUB_CACHE'] = str(Path(env['HF_HOME']) / 'hub')
         env['TRANSFORMERS_CACHE'] = env['HUGGINGFACE_HUB_CACHE']
         return env
 
@@ -243,20 +249,34 @@ class Runtime:
             if self.cancel.wait(0.5):
                 raise Cancelled()
 
+    def resource_enabled(self, name):
+        feature = {'MIO_WHISPER_MODELS': 'voice_input', 'MIO_VOSK_MODEL': 'voice_input',
+                   'MIO_SILERO_MODEL': 'voice_input', 'MIO_PIPER_MODELS': 'speech_output',
+                   'MIO_MELO_CACHE': 'speech_output', 'MIO_MEMORY_MODELS': 'vector_memory',
+                   'MIO_SPEAKER_MODEL': 'speaker_recognition'}.get(name)
+        if name == 'MIO_SPEAKER_MODEL' and not self.modules['voice_input']:
+            return False
+        return feature is None or self.modules[feature]
+
     def preflight(self):
         self.config = read(APPLICATION)
+        self.modules = load_modules(ROOT)
         if not self.resolve(self.config['python']).is_file():
             raise ValueError('Choose python.exe in Customization > Installation and startup.')
         timeout = self.config['startup_timeout_seconds']
         if isinstance(timeout, bool) or not isinstance(timeout, (float, int)) or not 5 <= timeout <= 1800:
             raise ValueError('Startup timeout must be between 5 and 1800 seconds.')
         for name, path in self.config['resources'].items():
+            if not self.resource_enabled(name):
+                continue
             if not path or not self.resolve(path).exists():
                 raise FileNotFoundError(f'Missing resource: {name} — {path}')
         from component_connections import load_connections
         connections = load_connections()
         self.connections = connections
         for key, port in (('transcription', 9000), ('french_voice', 9881), ('multilingual_voice', 9882)):
+            if not self.modules['voice_input' if key == 'transcription' else 'speech_output']:
+                continue
             from urllib.parse import urlsplit
             url = urlsplit(connections[key]['url'])
             if url.hostname != '127.0.0.1' or url.port != port:
@@ -265,7 +285,11 @@ class Runtime:
         model_settings = read(model_file)
         if self.config['load_llm'] and connections['llm']['model'] != (model_settings.get('api_identifier') or model_settings['model']):
             raise ValueError('Set the same model identifier in Language model / Connection and Local model loading.')
-        for port in (9000, 9881, 9882, 9890, 9891, 9893, 9010):
+        ports = ([9000, 9890, 9891] if self.modules['voice_input'] else [])
+        ports += [9881, 9882] if self.modules['speech_output'] else []
+        ports += [9893] if self.modules['vector_memory'] else []
+        ports += [9010] if self.modules['voice_input'] and self.modules['speaker_recognition'] else []
+        for port in ports:
             self.check_cancel()
             if listening(port):
                 raise RuntimeError(f'Port {port} already in use. Stop the other Mio session before starting this one.')
@@ -282,6 +306,10 @@ class Runtime:
             self.job = WindowsJob()
             # Desktop utilities are started once; already running tools are not owned.
             for utility in self.config.get('startup_tools', []):
+                if utility.get('name') == 'MicroBoost' and not self.modules['voice_input']:
+                    continue
+                if utility.get('name') == 'Insta360 Link Controller' and not self.modules['face_recognition']:
+                    continue
                 if not utility.get('enabled', False):
                     continue
                 path = self.resolve(utility['executable'])
@@ -295,6 +323,10 @@ class Runtime:
                 self.spawn(utility['name'], [str(path), *utility.get('arguments', [])],
                            str(path.parent), external=True)
             for service in self.config['external_services']:
+                if service['name'] in ('Agent DVR', 'CodeProject.AI') and not self.modules['face_recognition']:
+                    continue
+                if service['name'] == 'VoiceChanger' and not (self.modules['speech_output'] and self.modules['voice_changer']):
+                    continue
                 self.check_cancel()
                 endpoints = {
                     'LM Studio': self.connections['llm']['health_url'],
@@ -337,6 +369,9 @@ class Runtime:
                         ('memory', 'MemoireVectorielle/server.py', 9893, None)]
             pending = []
             for name, relative, port, signature in services:
+                feature = {'whisper': 'voice_input', 'piper': 'speech_output', 'melo': 'speech_output', 'memory': 'vector_memory'}[name]
+                if not self.modules[feature]:
+                    continue
                 script = ROOT / 'src' / relative
                 pending.append((name, port, signature, self.spawn(name, [python, '-u', str(script)], str(script.parent))))
             for name, port, signature, process in pending:

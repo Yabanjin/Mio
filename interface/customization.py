@@ -11,17 +11,19 @@ from ui_interaction import attach
 
 
 class Customization(tk.Toplevel):
-    def __init__(self, parent, on_saved, on_reload=None):
+    def __init__(self, parent, on_saved, on_reload=None, on_restart=None):
         super().__init__(parent)
         self.title('Mio — Customization')
         self.geometry('980x700')
         self.minsize(760, 500)
         self.on_saved = on_saved
         self.on_reload = on_reload
+        self.on_restart = on_restart
         self.active_section = 'Mio — Main settings'
         self.path = None
         self.original = None
         self.fields = []
+        self.microphone_panel = None
         self.section = tk.StringVar(value='Mio — Main settings')
         self.entries = catalog()
         self.protocol('WM_DELETE_WINDOW', self.close)
@@ -83,7 +85,7 @@ class Customization(tk.Toplevel):
             self.list.insert('end', label)
         self.list.selection_set(0)
         self.load(0)
-        is_main = self.active_section.startswith('Mio —')
+        is_main = self.active_section.startswith(('Mio —', 'Online —')) or self.active_section == 'Microphone'
         if self.on_reload:
             if is_main:
                 self.reload_button.pack(side='right', padx=5)
@@ -91,6 +93,11 @@ class Customization(tk.Toplevel):
                 self.reload_button.pack_forget()
         self.section_hint.configure(text=('Save, then Reload Mio. External servers stay running.' if is_main else
             'Save this module separately. Reload Mio does not restart this server. Server settings need its own restart.'))
+        if self.active_section == 'Mio — Modules':
+            self.reload_button.configure(text='Restart with selected modules')
+            self.section_hint.configure(text='Save, then restart Mio to apply the selected base configuration.')
+        elif self.on_reload:
+            self.reload_button.configure(text='Reload Mio')
         attach(self)
 
     def changed(self):
@@ -140,6 +147,7 @@ class Customization(tk.Toplevel):
     def render(self, value):
         for widget in self.area.winfo_children():
             widget.destroy()
+        self.microphone_panel = None
         self.fields = []
         self.template = value
         ttk.Label(self.area, text=page_help(self.path, self.raw.get()), wraplength=530,
@@ -159,6 +167,17 @@ class Customization(tk.Toplevel):
         item = canvas.create_window((0, 0), window=form, anchor='nw')
         canvas.bind('<Configure>', lambda e: canvas.itemconfigure(item, width=e.width))
         form.bind('<Configure>', lambda e: canvas.configure(scrollregion=canvas.bbox('all')))
+        if self.path.parent.name == 'online' and self.path.stem in ('gpt', 'gemini'):
+            from online_key_panel import add_key_panel
+            from api_connection_panel import ApiConnectionPanel
+            add_key_panel(form, self.path.stem)
+            ApiConnectionPanel(form, self.path.stem, self.value).pack(fill='x', pady=8)
+        if self.path.name == 'microphone-setup.json':
+            from microphone_settings import MicrophoneSettings
+            self.microphone_panel = MicrophoneSettings(form, value)
+            self.microphone_panel.pack(fill='both', expand=True)
+            attach(self.area)
+            return
         def add(data, keys=()):
             if isinstance(data, dict) and data:
                 for key, part in data.items():
@@ -169,9 +188,21 @@ class Customization(tk.Toplevel):
                     add(part, keys + (index,))
                 return
             # Lists of text are natural multiline fields; object lists use structured JSON.
+            if (self.path.parent.name == 'online' and keys and keys[-1] in ('tts_model', 'tts_voice')
+                    and value.get('tts_source', 'local') == 'local'):
+                return
             label = ' / '.join(display_label(k) for k in keys) or 'Value'
             ttk.Label(form, text=label, wraplength=520).pack(anchor='w', pady=(10, 2))
-            if isinstance(data, bool):
+            if self.path.parent.name == 'online' and keys and keys[-1] == 'tts_source':
+                choices = {'Local Mio voice': 'local',
+                           'Provider API voice': 'provider'}
+                control = tk.StringVar(value=next((label for label, key in choices.items() if key == data),
+                                                 'Local Mio voice'))
+                box = ttk.Combobox(form, textvariable=control, values=tuple(choices), state='readonly')
+                box.pack(fill='x')
+                get = lambda control=control: choices[control.get()]
+                box.bind('<<ComboboxSelected>>', lambda event: self.render(self.value()))
+            elif isinstance(data, bool):
                 control = tk.BooleanVar(value=data)
                 ttk.Checkbutton(form, text='Enabled', variable=control).pack(anchor='w')
                 get = control.get
@@ -179,10 +210,17 @@ class Customization(tk.Toplevel):
                 is_lines = isinstance(data, list) and all(isinstance(x, str) for x in data)
                 structured = isinstance(data, (dict, list)) and not is_lines
                 content = '\n'.join(data) if is_lines else (json.dumps(data, ensure_ascii=False, indent=2) if structured else str(data) if data is not None else 'null')
-                control = tk.Text(form, height=min(10, max(4, content.count('\n') + 2)),
+                control = tk.Text(form, height=min(10, max(4 if self.path.parent.name == 'online' else 2,
+                                                        content.count('\n') + 2)),
                                   wrap='word', font=('Segoe UI', 10), undo=True)
                 control.pack(fill='x')
                 control.insert('1.0', content)
+                read_content = lambda control=control: control.get('1.0', 'end-1c')
+                if self.path.parent.name == 'online' and keys:
+                    from model_field import install_hint, model_hint
+                    hint = model_hint(self.path.stem, keys[-1])
+                    if hint:
+                        read_content = install_hint(control, hint)
                 if keys and (keys[-1] in ('python', 'executable', 'working_directory') or str(keys[-1]).startswith('MIO_')):
                     def browse(control=control, key=str(keys[-1])):
                         directory = key == 'working_directory' or key in ('MIO_WHISPER_MODELS', 'MIO_PIPER_MODELS', 'MIO_MELO_CACHE', 'MIO_MEMORY_MODELS', 'MIO_VOSK_MODEL', 'MIO_SPEAKER_MODEL')
@@ -191,8 +229,8 @@ class Customization(tk.Toplevel):
                             control.delete('1.0', 'end')
                             control.insert('1.0', selected)
                     ttk.Button(form, text='Browse…', command=browse).pack(anchor='e')
-                def get(control=control, old=data, lines=is_lines, structured=structured):
-                    text = control.get('1.0', 'end-1c')
+                def get(control=control, old=data, lines=is_lines, structured=structured, read_content=read_content):
+                    text = read_content()
                     if lines:
                         return [line.strip() for line in text.splitlines() if line.strip()]
                     if structured or old is None:
@@ -210,6 +248,8 @@ class Customization(tk.Toplevel):
         attach(self.area)
 
     def value(self):
+        if self.microphone_panel is not None:
+            return self.microphone_panel.value()
         if self.path.suffix != '.json':
             return self.text.get('1.0', 'end-1c')
         if self.raw.get():
@@ -240,9 +280,29 @@ class Customization(tk.Toplevel):
         if self.path is None:
             return True
         try:
+            if self.microphone_panel is not None and not self.microphone_panel.stop_test():
+                self.status.configure(text='Input is still closing. Wait a moment, then save again.')
+                return False
             value = self.value()
             if self.path.suffix == '.json':
                 validate(value, self.original)
+                if self.path.name == 'microphone-setup.json':
+                    from audio_devices import validate_audio
+                    validate_audio(value['Audio'])
+                if self.path.parent.name == 'online':
+                    from online_routing import validate_routing, validate_provider
+                    if self.path.stem == 'routing':
+                        from settings_store import ROOT
+                        protected = [line.split('#', 1)[0].strip()
+                                     for path in (ROOT / 'src/MainApp/trigger').rglob('phrases.txt')
+                                     for line in path.read_text(encoding='utf-8-sig').splitlines()
+                                     if line.split('#', 1)[0].strip()]
+                        validate_routing(value, protected)
+                    else:
+                        validate_provider(value)
+                if self.path.name == 'modules.json':
+                    from module_settings import validate_modules
+                    validate_modules(value)
             elif not value.strip() and self.path.parent.name == 'prompt':
                 raise ValueError('A prompt cannot be empty.')
             if self.path.parent.name == 'components':
@@ -253,6 +313,8 @@ class Customization(tk.Toplevel):
                         if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password:
                             raise ValueError(f'{key}: enter an HTTP(S) URL without credentials')
             write(self.path, value)
+            if self.microphone_panel is not None:
+                self.microphone_panel.stop_test()
             self.original = copy.deepcopy(value)
             self.status.configure(text='Saved — applies on startup')
             self.on_saved()
@@ -266,5 +328,9 @@ class Customization(tk.Toplevel):
             self.destroy()
 
     def reload(self):
+        if self.active_section == 'Mio — Modules' and self.on_restart:
+            if self.save():
+                self.on_restart()
+            return
         if self.save() and self.on_reload:
             self.on_reload()

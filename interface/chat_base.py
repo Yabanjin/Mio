@@ -2,6 +2,9 @@
 import ctypes
 import json
 import os
+import re
+import webbrowser
+from urllib.parse import urlsplit
 from pathlib import Path
 import queue
 import subprocess
@@ -15,7 +18,7 @@ from collections import OrderedDict
 from chat_events import PREFIX
 
 ROOT = Path(__file__).resolve().parent.parent / 'src/MainApp'
-LOG = ROOT.parent.parent / "data/logs/mainapp.log"
+LOG = ROOT.parents[1] / "data/logs/mainapp.log"
 BG, FG = "#111827", "#eef2ff"
 DISPLAY_CONFIG = ROOT / "config" / "interface_chat.json"
 
@@ -80,7 +83,7 @@ class ChatWindow:
         self.command_help.insert("end", "Loading configured commands…")
         self.command_help.configure(state="disabled")
         self.chat = ScrolledText(self.root, wrap="word", bg=BG, fg=FG,
-                                 font=("Yu Gothic UI", int(self.display_settings["message_font_size"]), "bold"), relief="flat",
+                                 font=("Segoe UI", int(self.display_settings["message_font_size"])), relief="flat",
                                  padx=8, pady=2, insertbackground=FG, state="disabled")
         self.chat.pack(fill="both", expand=True, padx=6, pady=(0, 2))
         self.chat.tag_configure("state", font=("Segoe UI", 10, "bold"), foreground="#c7d2fe")
@@ -102,7 +105,7 @@ class ChatWindow:
         self.logs.geometry("1050x650")
         self.logs.configure(bg=BG)
         self.logs.protocol("WM_DELETE_WINDOW", self.logs.withdraw)
-        tk.Label(self.logs, text="JOURNAL TECHNIQUE", bg=BG, fg=FG,
+        tk.Label(self.logs, text="TECHNICAL LOG", bg=BG, fg=FG,
                  font=("Segoe UI", 16, "bold")).pack(anchor="w", padx=14, pady=10)
         self.log_view = ScrolledText(self.logs, wrap="word", bg="#090e18", fg="#d1d5db",
                                      font=("Consolas", 10), state="disabled")
@@ -122,7 +125,7 @@ class ChatWindow:
     def save_display_settings(self):
         self.opacity_save = None
         try:
-            DISPLAY_CONFIG.write_text(json.dumps(self.display_settings, ensure_ascii=False, indent=2) + "\n",
+            DISPLAY_CONFIG.write_text(json.dumps(self.display_settings, ensure_ascii=False, indent=2) + "\n\n",
                                       encoding="utf-8")
         except OSError as error:
             print(f"Chat settings could not be saved : {error}", file=sys.stderr)
@@ -189,7 +192,7 @@ class ChatWindow:
                     # Full diagnostics stay on disk; only the window is bounded.
                     pass
         except Exception as exc:
-            self.events.put(dict(kind="error", key=uuid.uuid4().hex, text=f"Lecture du journal : {exc}"))
+            self.events.put(dict(kind="error", key=uuid.uuid4().hex, text=f"Reading the log: {exc}"))
         finally:
             if log is not None:
                 log.close()
@@ -201,26 +204,52 @@ class ChatWindow:
         generation = event.get("generation", self.generation)
         if generation < self.generation:
             return
+        if kind in {'error', 'command'}:
+            diagnostic = '[UI ' + kind.upper() + '] ' + str(event.get('text', '')) + '\n'
+            try:
+                self.log_lines.put_nowait(diagnostic)
+            except queue.Full:
+                pass
+            try:
+                with LOG.open('a', encoding='utf-8') as log:
+                    log.write(diagnostic)
+            except OSError:
+                pass
+            if kind == 'command':
+                return
+            # Replace any rejected transcription rather than keeping it as speech.
+            self.messages.pop(event.get('key'), None)
+            event = dict(kind='message', key='error-reply-' + str(generation),
+                         generation=generation, mode=event.get('mode', self.mode),
+                         provider=event.get('provider', ''), stage='FULL TEXT',
+                         text='wakaranaii', mio=True,
+                         names=[{'GEMINI MODE': 'Geminy', 'GPT MODE': 'GPT'}.get(event.get('provider'), 'Mio')])
+            kind = 'message'
+        elif (kind == 'message' and event.get('mio')
+              and str(event.get('key', '')).startswith('auto-')
+              and re.sub(r'[\s.!！。…]+', '', event.get('text', '')) in {'わからない', 'わからないい', 'wakaranaii'}):
+            # The voiced fallback updates the same generic bubble, without a duplicate.
+            event = dict(event, key='error-reply-' + str(generation), text='wakaranaii')
         if kind == "commands":
             self.command_help.configure(state="normal")
             self.command_help.delete("1.0", "end")
             for i, group in enumerate(event.get("groups", [])):
                 if i:
-                    self.command_help.insert("end", "\n")
+                    self.command_help.insert("end", "\n\n")
                 self.command_help.insert("end", group['label'] + " : ", "label")
                 self.command_help.insert("end", " / ".join(group['phrases']) + " → " + group['action'])
             self.command_help.configure(state="disabled")
         elif kind == "state":
             if generation > self.generation:
                 self.messages = OrderedDict((k, v) for k, v in self.messages.items()
-                                            if v.get("stage") != "PRE TRAITEMENT")
+                                            if v.get("stage") != "PREPROCESSING")
                 self.render()
             self.generation = generation
             self.mode = event["mode"]
             self.status.configure(text=self.mode, fg="#86efac" if self.mode == "ACTIVE MODE" else "#a5b4fc")
             label = {"Child": "[CHILD]", "Adult": "[ADULT]", "Normal": "[NORMAL]"}
-            self.child_status.configure(text=label.get(event.get("family_mode"),
-                                                       "[CHILD]" if event.get("child_mode") else "[NORMAL]"))
+            family_label = label.get(event.get('family_mode'), '[CHILD]' if event.get('child_mode') else '[NORMAL]')
+            self.child_status.configure(text=family_label + '  ·  ' + event.get('provider', 'MIO LOCAL'))
             if not self.shutdown_requested:
                 self.detail.configure(text="" if event.get("ready") else "Initialisation…")
         elif kind == 'close_result':
@@ -243,7 +272,7 @@ class ChatWindow:
             self.messages[event["key"]] = entry
             while len(self.messages) > 120:
                 self.messages.popitem(last=False)
-            self.render()
+            self.render(follow_latest=True)
         elif kind == "exit":
             self.child_status.configure(text="")
             self.mode = "SLEEP MODE"
@@ -251,32 +280,66 @@ class ChatWindow:
             self.detail.configure(text="Mio stopped")
             if event["code"]:
                 self.receive(dict(kind="error", key=uuid.uuid4().hex,
-                                  text="Mio stopped. See Logs for details."))
+                                  text="The Mio engine stopped. Details are in Logs."))
 
-    def render(self):
+    def render(self, follow_latest=False):
         selection = self.chat.tag_ranges('sel')
         selection = tuple(str(index) for index in selection)
         bottom = self.chat.yview()[1] >= .98
         position = self.chat.yview()[0]
         self.chat.configure(state="normal")
+        self.chat.tag_remove('trailing_empty', '1.0', "end")
         self.chat.delete("1.0", "end")
-        for item in self.messages.values():
+        for tag in self.chat.tag_names():
+            if tag.startswith('source-'):
+                self.chat.tag_delete(tag)
+        link_count = 0
+        for item_index, item in enumerate(self.messages.values()):
+            if item_index:
+                self.chat.insert("end", "\n\n", "gap")
             side = "mio" if item.get("mio") else "user"
-            self.chat.insert("end", f"[{item['mode']}]\n", (side, "state"))
+            provider = (' · ' + item['provider']) if item.get('provider') else ''
+            self.chat.insert("end", f"[{item['mode']}{provider}] ", (side, "state"))
             tag = ("error" if item["stage"] == "ERROR" else
                    "command" if item.get("kind") == "command" else "stage")
             self.chat.insert("end", f"[{item['stage']}]\n", (side, tag))
             # UI label only: never rewrite response text, speech or identities.
-            names = " / ".join(item.get("names", [])) or "Speaker"
+            names = " / ".join(name
+                               for name in item.get("names", [])) or "Speaker"
             self.chat.insert("end", f"{names} : ", (side,))
-            self.chat.insert("end", f"{item.get('text', '')}\n", (side, "message_text"))
-            self.chat.insert("end", "\n\n", "gap")  # Two short empty lines between blocks.
+            text = re.sub(r'\n[ \t]*\n+', '\n', item.get('text', '').strip())
+            start = self.chat.index('end-1c')
+            self.chat.insert("end", text + '\n', (side, 'message_text'))
+            for number, source in enumerate(item.get('sources', []), 1):
+                url = source.get('url', '')
+                try:
+                    parsed = urlsplit(url)
+                except (ValueError, TypeError):
+                    continue
+                if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password:
+                    continue
+                link_count += 1
+                tag = 'source-' + str(link_count)
+                self.chat.tag_configure(tag, foreground='#a5b4fc', underline=True)
+                self.chat.tag_bind(tag, '<Button-1>', lambda event, url=url: webbrowser.open(url))
+                self.chat.tag_bind(tag, '<Enter>', lambda event: self.chat.configure(cursor='hand2'))
+                self.chat.tag_bind(tag, '<Leave>', lambda event: self.chat.configure(cursor='xterm'))
+                for match in re.finditer(r'\[' + str(number) + r'\]', text):
+                    self.chat.tag_add(tag, f'{start}+{match.start()}c', f'{start}+{match.end()}c')
+                title = ' '.join(str(source.get('title') or url).split())
+                self.chat.insert("end", f"[{number}] {title}\n", (side, tag))
+        # Keep the colored newline so the last message fills the complete row.
+        # Hide only Tk's trailing empty paragraph to avoid extra bottom space.
+        if self.messages:
+            self.chat.tag_configure('trailing_empty', elide=True)
+            self.chat.tag_add('trailing_empty', 'end-1c', "end")
         if selection:
             self.chat.tag_add("sel", *selection)
+        # Selection must stay above message backgrounds and text colors.
         self.chat.tag_raise("sel")
         self.chat.configure(state="disabled")
-        if bottom and not selection:
-            self.chat.see("end")
+        if follow_latest or (bottom and not selection):
+            self.chat.yview_moveto(1.0)
         else:
             self.chat.yview_moveto(position)
 
@@ -325,7 +388,7 @@ class ChatWindow:
             result = ctypes.windll.shell32.ShellExecuteW(
                 None, 'runas', 'cmd.exe', f'/d /c ""{script}""', str(ROOT.parent), 1)
             if result <= 32:
-                raise RuntimeError(f'Administrator launch failed (code {result}) ; '
+                raise RuntimeError(f'Le lancement administrateur a échoué (code {result}) ; '
                                    'utilise le raccourci Fermer Mio.')
             self.events.put(dict(kind='close_result'))
         except Exception as exc:

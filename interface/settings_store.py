@@ -70,6 +70,8 @@ def write(path, value):
 
 
 LABELS = {
+    'llm_model': 'Reply model API ID', 'tts_source': 'Speech source',
+    'tts_model': 'Speech model API ID', 'tts_voice': 'API voice name',
     'MemoireVectorielle': 'Vector memory', 'Rewrite': 'Reply rewriting',
     'Common': 'Common', 'Normal': 'Normal', 'Child': 'Child', 'Adult': 'Adult',
     'annulation_mode': 'Mode cancellation', 'arrivee_enfant': 'Child greeting',

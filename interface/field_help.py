@@ -2,6 +2,22 @@
 from pathlib import Path
 
 HELP = {
+ 'voice_input': ('Microphone and speech-to-text input.', 'Off uses typed chat only. On uses the selected microphone, Whisper, Vosk commands, Silero and WebRTC together.', 'Off avoids starting this input chain and MicroBoost. Use typed Mio wake/Stop commands. Speaker identification is inactive too when no microphone is used. Apply with Restart with selected modules.'),
+ 'speaker_recognition': ('Identify who is speaking with SpeechBrain.', 'Off transcribes speech without assigning a speaker name. On uses enrolled speaker references when available.', 'This switch does not disable speech transcription. Typed author selection still works. Without facial or speaker identity, the normal family mode is used unless Child mode is already active.'),
+ 'face_recognition': ('Camera recognition and the facial access requirement.', 'Off permits dialogue without camera authorization. On requires the existing registered-face checks and timers.', 'Off avoids starting Agent DVR, face recognition and the camera controller. Face-based arrivals and family selection are inactive; selected chat authors and enabled speaker recognition can still select family modes.'),
+ 'speech_output': ('Read Mio replies aloud.', 'Off keeps replies as text only. On uses local speech for Mio, or online speech for the selected online provider.', 'Off avoids local speech-model and RVC startup and all speech synthesis calls. Stop still cancels response generation; Sleep applies immediately when no voice is needed.'),
+ 'voice_changer': ('Convert synthesized speech with RVC.', 'On keeps your Voice Changer for local Mio voices and GPT/Gemini API voices. Off plays the original synthesized voice.', 'Used only with speech output enabled. Both local and API synthesis pass through the same RVC conversion when enabled.'),
+ 'vector_memory': ('Local long-term memory recall and extraction.', 'Off disables memory recall and new memory extraction. On keeps the current memory behavior.', 'Existing memories are preserved. The local memory service is not started when disabled. Online conversations do not automatically use local vector memories.'),
+ 'enabled': ('Allow this online provider to be selected.', 'Enable only the providers you want to use. Both are disabled by default.', 'Disabling the active provider cancels its turn and returns to local. Enabling makes it available without sending a request. Model, voice and API key must still be configured. The main Services menu has the same switch.'),
+ 'gpt_wake_phrases': ('Commands selecting GPT during an awake session.', 'One full command per line, for example GPT reveille toi. Accents and punctuation are ignored.', 'Wake Mio first. A provider command cancels the old turn and changes online LLM and speech; existing Mio wake commands return to local.'),
+ 'gemini_wake_phrases': ('Commands selecting Gemini during an awake session.', 'One full command per line, for example Geminy reveille toi or Gemini reveille toi.', 'Wake Mio first. Commands must differ from every existing Mio command. Exact recognition is required; Stop keeps the selected provider.'),
+ 'llm_model': ('The language model generating the written reply.', 'Enter the exact API model ID shown by the provider. This is a model identifier, not your API key, a file path or the name of your subscription.', 'Selects the online reply model. Only the reply model ID and API key are needed when using the local Mio voice.'),
+ 'tts_source': ('Choose where this provider gets its spoken voice.', 'Local Mio voice uses Piper/Melo. Provider API voice uses this provider\'s speech model and voice; fill in the extra fields shown below.', 'Both choices pass through Voice Changer when enabled in Mio — Modules. Local is the default. Save, then Reload Mio to apply this choice.'),
+ 'tts_model': ('API speech model reading the accepted text aloud.', 'Enter a speech model API ID, separately from the reply model ID. Only needed for Provider API voice.', 'The provider synthesizes the text, then the local Voice Changer converts it when enabled. Automatic Stop and greeting replies retain local synthesis.'),
+ 'tts_voice': ('Voice selected at the online speech service.', 'Enter a voice supported by the chosen speech model, such as coral for OpenAI or Kore for Gemini; verify model availability in the provider documentation.', 'Changes the sound of future online replies. It does not install a local voice or change your RVC model.'),
+ 'web_search': ('Allow the online model to search for current information.', 'Enable for sourced web answers; disable to omit the search tool.', 'The provider decides when to search. Sources appear as clickable links. Search availability, quotas and charges depend on your model/account.'),
+ 'api_key_environment': ('Optional environment variable supplying the API key.', 'Enter only the variable NAME, such as OPENAI_API_KEY or GEMINI_API_KEY, never the key itself. Or use the masked key panel above.', 'The Windows saved key takes priority. Restart Mio after changing Windows environment variables. Saved keys stay outside project files.'),
+ 'provider_instruction': ('Additional instructions for this online provider.', 'Write the dedicated GPT or Gemini prompt here. The existing shared main and selected family prompts are added automatically.', 'These prompts and the current question/history for this provider and family mode are sent online. Local vector memories, camera context and recordings are not automatically sent. Family and language rules remain active.'),
  'use_custom_connections': ('Choose how services are started.', 'Off keeps the current local launchers. On uses the connection pages and optional programs below.', 'Custom mode does not install services or change their ports. Existing external servers are not stopped by Mio.'),
  'launch_with_mio': ('Start this program when you press Start in custom mode.', 'Enable only when Mio should launch it; leave off for an already running service.', 'Mio owns programs it starts and stops them when the session closes. Use a program that stays running rather than a launcher that immediately exits.'),
  'executable': ('Program to launch for this component.', r'Browse to an .exe, for example F:\Services\Speech\env\Scripts\python.exe. Do not put arguments here.', 'Used only when Launch with Mio is enabled in custom mode.'),
@@ -44,6 +60,18 @@ HELP = {
 
 def page_help(path, raw=False):
     path = Path(path)
+    if path.name == 'modules.json':
+        return ('Choose the base configuration here. Save, then Restart with selected modules; '
+                'this restart applies the selected service set. Ordinary prompt/timing edits still use Reload Mio only. '
+                'Disabling face recognition removes camera authorization. Speech input groups the microphone, Whisper, Vosk, Silero and WebRTC; '
+                'speaker recognition separately identifies voices. The local LLM remains the base dialogue engine. '
+                'GPT and Gemini have their own Enabled switches in Services and their dedicated pages.')
+    if path.parent.name == 'online':
+        return ('Online provider settings: Save, then Reload Mio to apply changes. Wake Mio before selecting GPT or Gemini. '
+                'Each provider uses the shared main/family prompt plus its dedicated prompt and separate conversation history. '
+                'Keys are stored with the local key buttons, separately from page Save. '
+                'Gemini API keys can be created in Google AI Studio. Free-tier models have quotas, and free-tier data may be used to improve Google products; '
+                'check model eligibility and current terms in AI Studio. Mio never enables billing or switches to a paid model automatically.')
     if raw:
         return ('Advanced editor: enter valid JSON with double-quoted keys, unchanged value types and required keys. '
                 'For field-by-field guidance, turn Advanced JSON editor off. Save stores this page; reload applies service settings.')
@@ -65,7 +93,11 @@ def field_help(path, keys, value):
     path = Path(path)
     key = str(keys[-1]) if keys else 'value'
     tip = HELP.get(key)
-    if key == 'url':
+    if path.parent.name == 'online' and key in ('llm_model', 'tts_model', 'tts_voice'):
+        from model_field import model_hint
+        hint = model_hint(path.stem, key).replace('\n', ' ')
+        tip = (tip[0], hint + ' Copy the exact identifier from your provider account. The example is not selected automatically.', tip[2])
+    elif key == 'url':
         destinations = {'llm': ('chat requests', 'http://127.0.0.1:1234/v1/chat/completions'),
                         'transcription': ('audio transcription', 'http://127.0.0.1:9000/v1/audio/transcriptions'),
                         'french_voice': ('French speech synthesis', 'http://127.0.0.1:9881/tts'),

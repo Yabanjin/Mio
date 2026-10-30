@@ -10,7 +10,7 @@ How it works
 3. Agent DVR and CodeProject.AI can report who is visible to the camera. SpeechBrain can identify voices after users create voice profiles. These signals select the conversation mode and provide context.
 4. Vector memory retrieves relevant facts and stores useful new facts in the background.
 5. Mio builds the conversation context for the active mode and calls a dialogue model served by LM Studio. Piper synthesizes French speech, while MeloTTS can handle other languages. VoiceChanger RVC can transform the output voice.
-6. The chat interface shows status, transcriptions, replies, and errors. It opens before the services, provides customization controls, and starts the services on demand. Closing the window stops the processes launched by that session.
+6. The chat interface shows status, transcriptions and replies; technical errors stay in Logs with a generic error reply in chat. It opens before the services, provides customization controls, and starts the services on demand. Closing the window stops the processes launched by that session.
 
 Repository layout
 -----------------
@@ -30,9 +30,9 @@ Install Python 3.11 and create an environment in env, for example with py -3.11 
 
 Open interface/Launch Mio.vbs (or scripts/Start-Mio.ps1), select Customize, and configure your model paths, external applications and prompts. The launcher and interface code are together in the interface directory. Select Start to load the services. Reload to apply changes saves settings and restarts the session. Close the window with X to stop it. See USER-GUIDE.txt for details.
 
-Agent DVR, CodeProject.AI, LM Studio and VoiceChanger RVC run as external applications. Already-running services are reused; executable paths can be configured for services Mio should start. Voice, transcription and dialogue models must be supplied separately under their respective licenses.
+Agent DVR, CodeProject.AI, LM Studio and VoiceChanger RVC run as external applications. Already-running services are reused; executable paths can be configured for services Mio should start. The source checkout requires internal model resources separately. Standalone packages bundle available internal speech/recognition/memory models; dialogue models and external applications are supplied separately under their respective licenses.
 
-Mio is not yet packaged as an executable or installer. The complete startup flow and MeloTTS synthesis in the shared environment still need validation. Users can configure speaker identification, display names, and conversation modes for their installation.
+Standalone FR/EN Windows installers are available separately from Git. Local editions were rebuilt on 30 October 2026; hosted copies are not automatically updated. Full fresh installation and live conversation validation remain pending for the clean build. See README.md for the complete feature guide, download status, API support and module controls, and RELEASE-20261030.md for package verification.
 
 Project language
 ----------------

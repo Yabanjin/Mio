@@ -1,7 +1,7 @@
 """Settings pages and editable projections of existing files; no duplicate settings."""
 from pathlib import Path
 
-SECTIONS = ('Mio — Main settings', 'Mio — Texts', 'Mio — Timings',
+SECTIONS = ('Mio — Main settings', 'Mio — Modules', 'Microphone', 'Online — Commands', 'Online — GPT', 'Online — Gemini', 'Mio — Texts', 'Mio — Timings',
             'Language model', 'Whisper transcription', 'Piper voice', 'Melo voices',
             'Voice changer', 'Agent DVR camera', 'CodeProject.AI faces',
             'SpeechBrain recognition', 'Vosk keywords', 'Silero VAD', 'WebRTC echo cancellation',
@@ -32,15 +32,26 @@ def catalog(root, section, application):
                 continue
             entries.append((path.stem.replace('_', ' ').capitalize(), path))
     timing = lambda key: key.endswith(('_seconds', '_ms')) or key == 'face_context_confirm_seconds'
+    def microphone():
+        view('Microphone connection and level', 'microphone-setup', [
+            ('Audio', 'MainApp/config/peripheriques_audio.json', lambda k: True),
+            ('MicroBoost', 'settings/interface.json', ('startup_tools', 0))])
     if section == SECTIONS[0]:
         file('Chat appearance', 'MainApp/config/interface_chat.json')
-        file('Audio input', 'MainApp/config/peripheriques_audio.json')
+        microphone()
         file('Audio output and recognition', 'MainApp/config/connexion.json')
         file('Pronunciation', 'MainApp/config/prononciation.json')
         view('Language controls', 'language-controls', [('Languages', 'MainApp/config/langues_reponse.json', lambda k: k in ('temperature', 'min_detection_letters', 'min_rejection_confidence', 'short_detection_letters'))])
         view('Clock enabled', 'clock-enabled', [('Clock', 'MainApp/config/horloge.json', lambda k: k != 'instruction')])
         view('Detection and buffers', 'main-runtime', [('Runtime', 'MainApp/config/fonctionnement.json', lambda k: not timing(k))])
         view('Mode selection', 'main-modes', [('Modes', 'MainApp/config/conditions_prompt.json', lambda k: not timing(k))])
+    elif section == 'Microphone':
+        microphone()
+    elif section == 'Mio — Modules':
+        file('Enabled modules', 'settings/modules.json')
+    elif section.startswith('Online —'):
+        provider = {'Online — Commands': 'routing', 'Online — GPT': 'gpt', 'Online — Gemini': 'gemini'}[section]
+        file('Provider settings', 'settings/online/' + provider + '.json')
     elif section == 'Mio — Texts':
         for path in sorted((main / 'prompt').glob('*.txt')):
             entries.append(('Prompt / ' + path.stem, path))

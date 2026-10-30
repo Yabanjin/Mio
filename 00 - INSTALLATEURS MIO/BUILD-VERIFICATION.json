@@ -1,0 +1,54 @@
+{
+  "date": "2026-10-30",
+  "editions": [
+    {
+      "edition": "FR",
+      "file": "Mio Setup FR Test.exe",
+      "bytes": 3468362823,
+      "sha256": "3fc54cccfcafca07b0ad5856fd63c898feb67ecf13175786401fee03702653a6",
+      "embedded_sha256": "07691dbac7ec971bc58ed6edfb2f63d5b3feeae645779e43cc52b4227a409d1a",
+      "entries": 324,
+      "app_text_files_checked": 139,
+      "native_integrity": true,
+      "native_extraction": true,
+      "extracted_files_match_current_source": true,
+      "anonymous_defaults": true,
+      "external_test_connections_retained": false,
+      "initial_memory_empty": true,
+      "api_requests": false,
+      "services_started": false,
+      "fresh_dependency_install_tested": false
+    },
+    {
+      "edition": "EN",
+      "file": "Mio Setup EN Test.exe",
+      "bytes": 3468363034,
+      "sha256": "401aa44128e470d972301a1f779ff85a142d048f473b65771f2635010361496e",
+      "embedded_sha256": "21a59dce51be3dbc2b02d99c74d58c5405c909945c38ac5523ff0480b7086a91",
+      "entries": 324,
+      "app_text_files_checked": 139,
+      "native_integrity": true,
+      "native_extraction": true,
+      "extracted_files_match_current_source": true,
+      "anonymous_defaults": true,
+      "external_test_connections_retained": false,
+      "initial_memory_empty": true,
+      "api_requests": false,
+      "services_started": false,
+      "fresh_dependency_install_tested": false
+    }
+  ],
+  "additional_checks": {
+    "existing_folder_preserved": true,
+    "missing_embedded_package_rejected": true,
+    "FR_portable_imports_and_settings": true,
+    "services_started": false,
+    "api_requests": false,
+    "EN_portable_imports_and_settings": true,
+    "EN_commands_and_resource_paths": true
+  },
+  "existing_unit_tests_passed": 3,
+  "new_installation_and_live_conversation_validated": false,
+  "google_drive_updated": false,
+  "git_published": false
+}

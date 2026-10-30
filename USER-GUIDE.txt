@@ -69,3 +69,16 @@ There are three fixed conversation modes; their prompts and selection criteria
 are customizable. Creating additional mode types is not implemented.
 Chat appearance changes apply after reopening the window. The complete voice
 workflow still needs validation with the real services.
+
+
+30 OCTOBER 2026 — NEW SOURCE SETTINGS
+Open Customize > Mio — Modules to select local modules. Configure Microphone,
+choose the Windows default input or a device, then use Test and Stop. MicroBoost
+is optional and requires its executable path.
+Open Online — GPT or Online — Gemini, choose a model available to your account,
+save an API key, use the connection check, then enable the provider. This check
+does not validate a complete text/voice conversation. Local voice is the default.
+Configure commands in Online — Commands. Wake Mio first; then switch providers
+while awake. Stop cancels the current turn without changing provider.
+Online conversations do not use local family prompts or vector memory.
+See SOURCE-UPDATE-20261030.md before distributing or testing installers.
